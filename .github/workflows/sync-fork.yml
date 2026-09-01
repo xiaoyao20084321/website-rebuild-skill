@@ -1,0 +1,25 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # UTC 1点 = 北京时间每天上午9点
+  workflow_dispatch:       # 允许手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync with Upstream
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork
+
+    steps:
+      - name: Sync upstream
+        run: gh repo sync xiaoyao20084321/website-rebuild-skill -b main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report failure
+        if: failure()
+        run: echo "Sync failed - check Actions log; if upstream force-pushed you may need to manually re-sync"
