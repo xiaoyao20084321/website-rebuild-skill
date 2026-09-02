@@ -287,6 +287,7 @@
 - 分析与像素 ID：`G-` / `UA-` / GTM 容器 ID、Meta pixel、各 SaaS 的 company id（常直接出现在资产路径里）；
 - 错误上报 DSN、reCAPTCHA / hCaptcha site key；
 - **第三方公司或个人的邮箱、电话、地址**；商户号、结算入口。
+- ⛔ **`GTM-/G-/UA-` 三个前缀不是清单，是清单里的一行**【raycastkbd】：那个项目的 DEPLOY 写"GTM-/G-/UA- 0 命中"就收了工，而产物里实际带着 PostHog 项目 token（`phc_…`，chunk 内 `posthog.init(...)`）、Rewardful 联盟 id（外壳 `data-rewardful=`）、Sentry DSN（`https://<key>@oNNN.ingest.us.sentry.io/<project>`）、Vercel Analytics / Speed Insights 脚本。每一样都会把复刻站访客的数据记进原作者账上。扫法：对 `site/`、`port/`（或 `src/`）与外壳 grep `phc_[A-Za-z0-9]{20,}` / `data-rewardful` / `@o\d+\.ingest` / `_vercel/` / `posthog\.init\(` / `Sentry\.init|dsn:` ，逐条进表。
 
 **为什么危险**（逐条形状不同，处置也不同）：站点验证 meta 挂在**你控制的域名**上，形状上就是一次搜索引擎/社交平台的**验证劫持**；API token 是**别人的配额**；DSN 与 pixel 会把你的流量**记进别人账上**；邮箱地址在新 origin 上是**转发出去的个人信息**。
 
@@ -354,6 +355,7 @@
 3. ⭐ **混淆维度独立取证**（§3.2 三问），**与维度一分开呈现**，不合并成一个"综合风险"【objectarchive】。
 4. **逐类计数与门/账本对账无未解释差额**（§2.5）——对不上说明资产表本身不可信，**先修对账再呈交**：拿不可信的表去让用户决定，比不呈交更糟。
 5. **产物内第三方标识符已扫描并逐条列出**（§2.6），附"公开前需剥离/stub 的清单"。
+5b. **分发面事实已报出**：仓库可见性（`gh repo view --json isPrivate`）、是否已推送、`mirror/` 本体是否入库、预览部署是否公网可达及其 `X-Robots-Tag` / 访问控制——**这些是事实不是结论**，与"产物里有什么"是两个维度。实证【samsy】：README 写着"不再分发 / 不公开部署"，而仓库 PUBLIC、217 MB 镜像已推送、pages.dev 公网可达——不是谁做错了决定，是**没人把这四个事实放到同一页上给用户看**；用户看到后一句话就定了（"小范围预览，分发由使用者自行考量"），并按 §7.2 记进 DEPLOY.md §1。
 6. **把选项与风险边界写成 §0.1 的五段式**，一次问完。
 7. **⛔ 用户作出决定**——`AskUserQuestion` 或编号清单，**拿到明确答复才继续**。在此之前按安全默认执行（§4）。
 

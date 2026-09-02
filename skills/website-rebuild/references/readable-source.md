@@ -26,6 +26,20 @@
 (`slice-modules --check` 加 `build-site --check`,本项目 23/23 一致)。
 **一道门沉默着退出 0,和查遍一切之后退出 0,从外面看是一样的——而只有一个有意义。**
 
+### §4.5.1 ⭐ Next 工程的 verify-fresh 形态：链上没有 bundler，但有 buildId【darkroom】
+
+C1 重构工程的新鲜度链是 `src-modules/ + app/ → next build → assemble-static`。判据不变
+（重新生成、比字节、不看时间戳），前提多一条：⛔ **`generateBuildId` 必须钉死**——随机 buildId
+让同一份源码两次 build 出不同 HTML，链条永远"过期"。`tools/verify-fresh-next.mjs` 把现存静态树
+HTML 记 sha、备份 `.next`、重跑 build + assemble 到临时目录逐文件比对（10/10）。
+
+### §4.6.1 ⭐ `.npmrc` 是交付物的一部分【darkroom】
+
+verify-standalone 的 `--full`（复制出去、断网 `npm install`、构建）在 canary React + Next peer 范围
+下会 ERESOLVE——`.npmrc`（`legacy-peer-deps`）不是本机习惯，是**交付物能装起来的条件**，随
+`src/` 一起交付并由 `--full` 证明。另：`.next/` 是构建产物（`required-server-files.json` 记着构建
+机的绝对路径），静态扫描要跳过，不是"绝对路径泄漏"。
+
 ### §4.6 交付物的服务器必须**按项目那样配置**
 
 `make-standalone` 生成的 `serve` 脚本原本只有 `--root public --port N`。
@@ -205,6 +219,15 @@ src/assets/**
 
 先判形态再往下读。判错的代价是把一套为不同问题设计的机制，套在一个没有那个问题的目标上。
 
+### 3.0.0 ⭐ 第三种形态：源码已经可读——不拆、不重命名【firstlaunch】
+
+早年手写站（2013 时代：CoffeeScript/Compass 编译产物、原始命名、每文件一模块）没有"拆"与"提名"的问题——**文件就是模块，名字就是作者起的名字**。这一阶段随之塌缩：
+
+- **可读性增量只剩一种**：应用侧文本文件的**出处头注释**（provenance：捕获时间戳 / sha256 / 角色一句话 / 指回 engine-notes），以一条标记行收尾（`===== VERBATIM MIRROR BYTES BELOW =====`）；
+- **等价门从双向单射符号表退化为一条 suffix 断言**：`src 文件 = 头注释 + mirror 字节` 的精确拼接（逐行验证头部只含注释、标记行之后逐字节等于镜像）——一条断言顶一整套符号门；`rename-map.json` 落一份**恒等声明**留档，说明为什么是空表；
+- **自包含照旧是定义性要求**（§2 全套：按账本复制、URL 空间不动、验证钩子随行）；
+- ⛔ **别把"可读"当成"可改写"的许可**：CoffeeScript 产物的 `_i/_len/_results` 是行为字节，"反编译回 .coffee"是在发明一份不存在的源——结构性重写禁令（§3.3）在这里同样有效，且诱惑更大。
+
 ### 3.0.1 ⭐⭐ 模块化产物：难点整体平移到「叫什么」【airpodspro】
 
 边界免费拿到之后，剩下的问题是模块 id **是内容哈希**（`2439ebf272610f59b73f`），不携带任何信息。文件名是读者进入代码的第一个入口，所以这一阶段的主要工作变成**从证据里提名**。
@@ -247,6 +270,20 @@ src/assets/**
 ⭐ 正确做法：每个模块产出**候选阶梯**（按证据级排序），全局逐级裁决——某一级上只有一个模块认领的名字判给它；**同一级**多个模块认领才算真歧义，全部落空，并且这个名字对后续级别一并作废（否则更弱的证据会把它悄悄捡回去）。输给更强主张的模块，自动落到自己的下一个候选。
 
 ⚠ 人工裁决要能**存活到下一次运行**：override 文件是 tier 0，且每条必须附上"读到了什么"。⛔ **override 里写了一个不在切片里的 id 必须 FATAL 并给 did-you-mean**——凭记忆抄 id 抄错过两次，而**静默无效的 override 在 diff 里看起来和生效了一模一样**。
+
+### 3.0.1.1 ⭐ 多 chunk 站：按 canonical 位逐 chunk 跑三件套，提名之后要有"接受"这一步【darkroom】
+
+name-modules / modules-to-src / verify-module-map 三件套认的是**单文件 map**（`MAP.source` + 一个
+容器）。多 chunk 站（darkroom 60 chunk / 339 模块）的做法不是改三件套，是**按 merged map 的
+canonical 位把闭包切成逐 chunk 的子闭包与子 map，逐 chunk 跑**（`tools/sourcify-chunk.mjs`）；
+⛔ 闭包 id 必须与 map **同型**（字符串）——数字 id 整批"not in map"，报的是缺失不是类型。
+
+name-modules **只提名，不决定**。提名之后要有显式的"接受"步（`tools/accept-names.mjs`）：
+Turbopack 站的默认规则是**只接受 tier-1（打包器声明的导出名）**，其余保留 id——darkroom
+278 模块中 105 个由此得名，其余 173 个宁可叫 `m<id>` 也不用低档证据；"错名比哈希更糟"在
+接受步上才真正生效。逐 chunk 产物仍以 verify-module-map 对压缩原件 token 边界收口（43/43）。
+Turbopack 三参工厂是 `(ctx, module, exports)`（runtime 的 `n(u, o, i)`），不是 webpack 的
+`(module, exports, require)`——modules-to-src 按容器种类给包装形参命名，位置对而名字反同样是错名。
 
 ### 3.0.2 ⭐⭐ 模块化产物拆成文件：三条会毁掉等价性的决定【airpodspro】
 
@@ -338,6 +375,12 @@ WebGPUWaveSimulation / Gerstner / createInitSpectrumMaterial 等 151 件——�
 
 ⚠ 本节与 §3.1 分工:§3.1 管**容器/扁平 port 重写为真 ESM 树**(粒度三约束),本节管
 "重写不可行"的那一形状;两者都以"先有裁判,再动手"为前提。
+
+### 3.0.7 ⭐ 手写移植 + 冻结快照当 port/：第一段的裁判是声明级点名【samsy】
+
+skill 采纳之前完成的项目会长成这个形状：M2–M12 是**人手逐字移植**（带 `pretty LNNNN` 头注释），M13 把它冻结为 `port/`，`src/` 由重命名器从它派生。三段接力里 **src→port 有 token 门，port→mirror 只有头注释**——纪律 2 的第一段没有机器裁判，冷头评审靠人读了一个区间的 60 个类、发现一处真缺口，然后没人能复跑。
+
+这一形态的正确裁判不是切片门（无字节可拼），是 `scripts/cold-audit-decls.mjs`：把 `_pretty` 应用区的每个深度 0 声明拿去问 port/src 的引用注释（区间含即 cited），问不到的必须进 `docs/cold-audit-overrides.json` 的一个桶（`collapsed` npm/addon/编译器产物顶替、`omitted` 登记死代码、`ported` 人工裁决点名文件）。实测 samsy 首跑 964 条里 349 条 UNKNOWN，**没有一条是缺口**：三大 vendor 与应用交错的区间（vuex / vue-router / TSL 别名块 / partysocket+uuid / three addon 的模块级作用域）、SFC 编译器提升出来的 vnode 常量、以及一整段**主线程里重复打包的 worker 模块**（retarget/packer 在 main 与 baker.worker 里各一份，port 只从 worker 那份抄了一次）。**归桶的过程就是那份评审第一次被写下来。** 引用注释的坐标形状要统一（`pretty L…`、`@L…`、`L30456-64` 短尾），头注释常常比声明少一行——`--slack 1` 是实测出来的默认值。
 
 ### 3.1 拆模块 ⛔ 粒度不是自由选择
 

@@ -62,6 +62,7 @@ import {
 // gate could not report it because the blind spot was shared (objectarchive
 // N13: 16 feeds, reference set 3,109 -> 3,521).
 import { createRefExtractor, isTextRefSource } from './lib/extract-refs.mjs';
+import { imageAcceptFor } from './lib/negotiate.mjs';
 
 // ---------------------------------------------------------------------------
 // CONFIG — per-project constants; site specifics come from the CLI instead.
@@ -145,6 +146,20 @@ const fetched = new Set();
 // Redirects are SOURCE-SITE BEHAVIOR, not crawler bookkeeping: they get their
 // own ledger and are never collapsed into the source path's file.
 const redirects = []; // {from, status, to}
+// ⛔ The redirect ledger must ACCUMULATE like the manifest does. A later run
+// (`--scope` to add a page family, `--seeds` to fill a gap) rebuilt this array
+// from scratch and wrote a file with only the header: the first crawl's
+// `/work 308 -> /` was gone, and the payload gate found out by hitting a 404
+// on /work (14islands F6). Same promise as the manifest carry-over above — a
+// ledger that forgets what it is being added to is not the same ledger.
+{
+  const prior = await readFile(join(OUT, 'redirects.tsv'), 'utf8').catch(() => '');
+  for (const line of prior.split('\n').slice(1)) {
+    const [status, from, to] = line.split('\t');
+    if (status && from) redirects.push({ from, status: Number(status), to: to || '' });
+  }
+  if (redirects.length) console.log(`[ledger] carrying over ${redirects.length} redirect row(s) from the existing redirects.tsv`);
+}
 
 // Delegated to lib/urlpath.mjs so the crawler, the capture pass, the server and
 // the mirror gate cannot drift apart on where a URL lives — and so the query
@@ -153,7 +168,7 @@ function localPathFor(url) {
   return join(OUT, localRelPath(url, ORIGIN_HOST, QUERY_POLICY));
 }
 
-async function save(url, buf, contentType) {
+async function save(url, buf, contentType, extra = {}) {
   const p = localPathFor(url);
   await mkdir(dirname(p), { recursive: true });
   await writeFile(p, buf);
@@ -162,6 +177,11 @@ async function save(url, buf, contentType) {
     bytes: buf.length,
     sha256: createHash('sha256').update(buf).digest('hex'),
     type: contentType || '',
+    // Ledger blind spot closed (basement D5): without the fetch profile and
+    // the Vary header on record, a negotiated response is indistinguishable
+    // from a plain one and the divergence is invisible to every audit.
+    ...(extra.profile ? { profile: extra.profile } : {}),
+    ...(extra.vary ? { vary: extra.vary } : {}),
   };
 }
 
@@ -184,8 +204,13 @@ async function get(url) {
       profile.name === 'std'
         ? // Some asset CDNs require a same-origin Referer and return 403
           // without one (landonorris lesson); supply it so legitimate
-          // requests are served.
-          { 'user-agent': UA, accept: '*/*', referer: ORIGIN + '/' }
+          // requests are served. Image URLs get the browser's own image
+          // Accept: `auto=format` CDNs negotiate the response format on it,
+          // and `accept: */*` lands the FALLBACK bytes, not what a browser
+          // would receive (basement D5: 391 variants, webp transcoded back
+          // to JPEG, every downstream gate green). lib/negotiate.mjs holds
+          // the one yardstick.
+          { 'user-agent': UA, accept: imageAcceptFor(url), referer: ORIGIN + '/' }
         : profile.headers;
     const res = await fetch(url, {
       headers,
@@ -202,7 +227,14 @@ async function get(url) {
     }
     if (res.ok) {
       const buf = Buffer.from(await res.arrayBuffer());
-      return { buf, type: res.headers.get('content-type') || '' };
+      // Vary:accept in the ledger = this URL's bytes depend on the request
+      // profile; the census in sanity-platform.md §1.2 reads it back.
+      return {
+        buf,
+        type: res.headers.get('content-type') || '',
+        vary: res.headers.get('vary') || '',
+        profile: profile.name,
+      };
     }
     lastStatus = res.status;
     // Only auth-ish refusals suggest a header allergy; a 404 is a 404.
@@ -354,13 +386,13 @@ for (let round = 1; round <= ROUNDS && assetQueue.size; round++) {
       if (fetched.has(url)) continue;
       fetched.add(url);
       try {
-        const { buf, type, redirectTo } = await get(url);
+        const { buf, type, vary, profile, redirectTo } = await get(url);
         if (redirectTo !== undefined) {
           console.log(`[asset REDIRECT] ${url.slice(0, 90)} -> ${redirectTo}`);
           if (redirectTo && !fetched.has(redirectTo)) assetQueue.add(redirectTo);
           continue;
         }
-        await save(url, buf, type);
+        await save(url, buf, type, { vary, profile });
         console.log(`[asset] ${url.slice(0, 110)} (${buf.length}b)`);
         // Declared type first, then extension, then a sniff of the bytes we
         // already hold — so an extensionless route or a feed the extension
@@ -403,7 +435,9 @@ await writeFile(
   // Column order is CODE FROM TO because serve.mjs's replay reader destructures
   // in that order; a FROM-first ledger silently replays nothing.
   ['CODE', 'FROM', 'TO'].join('\t') + '\n' +
-    redirects.map((r) => [r.status, r.from, r.to].join('\t')).join('\n') + (redirects.length ? '\n' : '')
+    // dedupe: a re-visited redirect is the same source behaviour, not a new row
+    [...new Map(redirects.map((r) => [`${r.status}\t${r.from}\t${r.to}`, r])).values()]
+      .map((r) => [r.status, r.from, r.to].join('\t')).join('\n') + (redirects.length ? '\n' : '')
 );
 await writeFile(
   join(OUT, 'inventory.tsv'),

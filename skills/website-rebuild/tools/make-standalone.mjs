@@ -25,8 +25,31 @@ const flag = (n, d) => { const i = args.indexOf("--" + n); return i >= 0 && args
 // ⛔ NOT one page. A whole-site port has as many shells as it has routes, and a
 // default naming a previous project's page is how a tool teaches you the wrong
 // shape. --shell takes a FILE, a comma list, or a DIRECTORY (walked for .html).
-const SHELL = flag("shell", "site");
-const MIRROR = path.resolve(flag("mirror", "mirror"));
+// ⛔ NO DEFAULT. `--shell` used to default to "site", so a bare invocation to
+// read the usage EXECUTED the defaults and copied a 1.27 GB mirror into
+// src/public/ (14islands F15). A tool that writes gigabytes must be told to.
+const SHELL = flag("shell", null);
+const NO_BUILD = process.argv.includes("--no-build");
+// --keep-own: the port's own paths are EXPECTED (not mirror holes) but the
+// shells are NOT rewritten to a single BUILD_OUT. The rewrite semantics assume
+// one bundled build output; a verbatim multi-chunk port (25 re-emitted webpack
+// chunks) has none — with --own alone every <script src> was pointed at the
+// FIRST own path, ten chunks loaded instead of 25, the first paint was blank,
+// and probe reported CLEAN with zero failed requests (14islands F17: only the
+// pixel gate's non-empty-frame precondition spoke). Verbatim-chunk ports use
+// this mode.
+const KEEP_OWN = process.argv.includes("--keep-own");
+if (!SHELL) {
+  console.error("usage: make-standalone.mjs --shell <file|a,b|dir> [--out src] [--own /path,...] [--keep-own] [--no-build] [--build-out /app.js] [--replaced /old.js] [--externals a,b] [--allow mirror/external.txt] [--stub-ext-hosts h,h] [--ext-hosts h,h] [--origin-host h] [--name n] [--serve-port n]");
+  process.exit(2);
+}
+// ⭐ `--mirror a,b,c` is a CHAIN, same contract as serve.mjs --fallback-root:
+// the negotiated-variant tree sits above the read-only mirror, and the copy
+// must take each file from the FIRST root that holds it — otherwise the
+// deliverable ships the `*/*` fallback bytes the browser never sees
+// (raycastkbd: 42 next/image rungs live in mirror-negotiated/).
+const MIRRORS = flag("mirror", "mirror").split(",").map((s) => s.trim()).filter(Boolean).map((p) => path.resolve(p));
+const MIRROR = MIRRORS[0];
 const OUT = path.resolve(flag("out", "src"));
 // The origin bundle this port replaces. ⛔ It must not travel with the
 // deliverable: shipping the thing you replaced next to its replacement makes
@@ -105,28 +128,42 @@ const EXCLUDE = [/^_pretty\//, /^mirror-manifest\.json$/, /^inventory\.tsv$/, /^
 // The document's own references are still collected — not to decide what to
 // copy, but to report what it names that the mirror does not have.
 const refs = new Set();
+// ⛔ HTML attribute values are ENTITY-ENCODED. A srcset candidate reads
+// `…?auto=format&amp;w=3840` in the document and `…&w=3840` on disk; without
+// decoding, 628 present variants were reported as "page links outside the
+// mirror" (14islands F15). Same decode the mirror gates apply.
+const decodeEntities = (v) => v.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 // ⛔ KEEP THE QUERY. The mirror's url->path mapping is query-aware
 // (lib/urlpath.mjs), so `/x.woff2?dpl=…` and `/x.woff2` are different files —
 // and dropping the query here reported 524 present fonts as missing, every one
 // of them sitting on disk under its query-suffixed name.
-for (const m of html.matchAll(/(?:src|href|content|data-[\w-]*)="(\/[^"#]+)/g)) refs.add(m[1]);
-for (const m of html.matchAll(/url\((["']?)(\/[^)"']+)/g)) refs.add(m[2]);
+for (const m of html.matchAll(/(?:src|href|content|data-[\w-]*)="(\/[^"#]+)/g)) refs.add(decodeEntities(m[1]));
+for (const m of html.matchAll(/url\((["']?)(\/[^)"']+)/g)) refs.add(decodeEntities(m[2]));
 for (const m of html.matchAll(/(?:srcset|data-srcset)="([^"]+)"/g)) {
   for (const part of m[1].split(",")) {
-    const u = part.trim().split(/\s+/)[0];
+    const u = decodeEntities(part.trim().split(/\s+/)[0]);
     if (u.startsWith("/")) refs.add(u);
   }
 }
 
 // --- copy the ledger ---------------------------------------------------------
-const MANIFEST = JSON.parse(await readFile(path.join(MIRROR, "mirror-manifest.json"), "utf8").catch(() => "{}"));
+// Manifests merge FIRST-ROOT-WINS per URL; the ledger is the union of every
+// root's inventory, each rel path remembered with the root that owns it.
+const MANIFEST = { files: {} };
+const OWNER = new Map(); // rel path -> root dir that holds it (first wins)
+for (const root of MIRRORS) {
+  const mf = JSON.parse(await readFile(path.join(root, "mirror-manifest.json"), "utf8").catch(() => "{}"));
+  if (mf.origin && !MANIFEST.origin) MANIFEST.origin = mf.origin;
+  for (const [u, rec] of Object.entries(mf.files || {})) if (!(u in MANIFEST.files)) MANIFEST.files[u] = rec;
+  const inv = await readFile(path.join(root, "inventory.tsv"), "utf8").catch(() => "");
+  for (const l of inv.split("\n").slice(1)) { const rel = l.split("\t")[2]; if (rel && !OWNER.has(rel)) OWNER.set(rel, root); }
+}
 const ORIGIN_URL = (MANIFEST.origin || "https://example.invalid").replace(/\/$/, "") + "/";
 const ORIGIN_HOST = new URL(ORIGIN_URL).hostname;
 const POLICY = await loadPolicy(MIRROR);
+const inRoots = (rel) => MIRRORS.map((r) => path.join(r, rel));
 
-const ledger = (await readFile(path.join(MIRROR, "inventory.tsv"), "utf8"))
-  .split("\n").slice(1).filter(Boolean)
-  .map((l) => l.split("\t")[2]).filter(Boolean);
+const ledger = [...OWNER.keys()];
 
 // ⭐ BYTE MANIFEST — the deliverable carries its own per-file sha256 ledger,
 // and the generated check/build/serve scripts re-verify it EVERY run. Between
@@ -141,7 +178,7 @@ const BYTE_MANIFEST = {};
 // Only a project that HAS an own build gets unpinned paths — without --own,
 // BUILD_OUT is a default that names no real file, and listing it makes the
 // checker report a phantom "own-build path" on every verbatim-only project.
-const UNVERIFIED = new Set((OWN.length ? OWN.concat(BUILD_OUT) : []).map((p2) => "public" + (p2.startsWith("/") ? p2 : "/" + p2)));
+const UNVERIFIED = new Set((OWN.length ? (KEEP_OWN ? OWN : OWN.concat(BUILD_OUT)) : []).map((p2) => "public" + (p2.startsWith("/") ? p2 : "/" + p2)));
 const posixRel = (rel) => rel.split(path.sep).join("/");
 const hashFile = (p2) => new Promise((res, rej) => {
   const h = createHash("sha256");
@@ -159,7 +196,7 @@ let copied = 0, bytes = 0, skipped = 0;
 for (const rel of ledger) {
   if (EXCLUDE.some((re) => re.test(rel))) { skipped++; continue; }
   if (rel === REPLACED.replace(/^\//, "")) { skipped++; continue; }
-  const from = path.join(MIRROR, rel);
+  const from = path.join(OWNER.get(rel) || MIRROR, rel);
   const st = await stat(from).catch(() => null);
   if (!st || !st.isFile()) continue;
   const to = path.join(PUBLIC, rel);
@@ -205,10 +242,10 @@ for (const ref of refs) {
   // that was deliberately excluded and registered.
   if (extForm && STUB_HOSTS.includes(extForm[1])) continue;
   const candidates = [
-    ...(mapped ? [path.join(MIRROR, mapped), path.join(MIRROR, mapped, "index.html")] : []),
-    ...(ref.endsWith("/") ? [path.join(MIRROR, bare, "index.html")]
-                          : [path.join(MIRROR, bare), path.join(MIRROR, bare, "index.html")]),
-    ...(extForm ? [path.join(MIRROR, "assets", extForm[1], extForm[2])] : []),
+    ...(mapped ? [...inRoots(mapped), ...inRoots(path.join(mapped, "index.html"))] : []),
+    ...(ref.endsWith("/") ? inRoots(path.join(bare, "index.html"))
+                          : [...inRoots(bare), ...inRoots(path.join(bare, "index.html"))]),
+    ...(extForm ? inRoots(path.join("assets", extForm[1], extForm[2])) : []),
   ].flatMap((c) => {
     // ⚠ A reference is PERCENT-ENCODED; the file on disk is not. `Group%20633683.svg`
     // and `Group 633683.svg` are the same asset, and 36 of them were reported
@@ -255,7 +292,7 @@ for (const root of new Set(SHELLS.map((s2) => s2.root))) {
 await mkdir(PUBLIC, { recursive: true });
 for (let i = 0; i < SHELLS.length; i++) {
   let doc = htmls[i];
-  for (const own of OWN) {
+  for (const own of KEEP_OWN ? [] : OWN) {
     const esc = own.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     doc = doc.replace(new RegExp(`(<script\\b[^>]*\\bsrc=")${esc}(")`), `$1${BUILD_OUT.startsWith("/") ? BUILD_OUT : "/" + BUILD_OUT}$2`);
   }
@@ -332,7 +369,11 @@ await writeFile(path.join(OUT, "package.json"), JSON.stringify({
     // ⭐ check/build/serve all re-verify the byte manifest first: the copy is
     // self-auditing on every use, not audited once at generation.
     check: "node verify-bytes.mjs",
-    ...(OWN.length ? {
+    // ⛔ …and only when an entry module EXISTS. A verbatim-chunk port has --own
+    // (its chunks) but no index.js; generating `esbuild index.js` for it is a
+    // build step with nothing to build (readable-source §4.2), and --own's first
+    // item was silently taken as BUILD_OUT (14islands F15). --no-build forces it off.
+    ...(OWN.length && !NO_BUILD && !KEEP_OWN && fssync.existsSync(path.join(OUT, "index.js")) ? {
       build: `node verify-bytes.mjs && esbuild index.js --bundle --format=iife --outfile=public${BUILD_OUT}` +
         EXTERNALS.map((e) => ` --external:${e}`).join(""),
     } : {}),

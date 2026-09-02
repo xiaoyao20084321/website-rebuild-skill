@@ -128,7 +128,43 @@ const ownerAt = new Int32Array(T.length).fill(-1);
 }
 const byOwner = new Map();
 for (const i of props) byOwner.set(ownerAt[i], (byOwner.get(ownerAt[i]) || []).concat(i));
-const [, members] = [...byOwner].sort((a, b) => b[1].length - a[1].length)[0] || [];
+// ⛔ "The depth with the most module-shaped properties" is a COUNT, and a count
+// loses to a bigger unrelated object: three.js's namespace export map
+// `n.d(t,{ACESFilmicToneMapping:function(){return …}, …})` holds 400+
+// `key: function` properties inside ONE module, so on 14islands the reader
+// picked it — "406 modules of 3 lines" for a chunk with 256 real factories —
+// and on another chunk reported 1,864 module lines inside a 1,213-line file
+// without FATAL. A POSITIVE signature beats a count (the Turbopack lesson,
+// again): a webpack 5 / webpack 4 chunk registers its container as
+//   (self.webpackChunk_N_E = self.webpackChunk_N_E || []).push([[<ids>], { <id>: factory, … }, runtime?])
+//   (window.webpackJsonp = window.webpackJsonp || []).push([[<ids>], { … }])
+// — the object literal that is the SECOND element of the pushed array. When
+// that push is present, its object IS the container, whatever else the file
+// contains.
+let pushOwner = -1;
+for (let i = 0; i + 4 < T.length && pushOwner < 0; i++) {
+  if (lab(i) !== "name" || !/^webpack(Chunk|Jsonp)/.test(String(val(i)))) continue;
+  let j = i;
+  while (j < T.length && !(lab(j) === "name" && val(j) === "push")) j++;
+  while (j < T.length && lab(j) !== "[") j++;
+  if (j >= T.length) continue;
+  // walk the pushed array at depth 1; the first `{` that STARTS an element is the container
+  let d = 0;
+  for (let k = j; k < T.length; k++) {
+    const l = lab(k);
+    if (OPEN.has(l)) {
+      d++;
+      if (d === 2 && l === "{" && (lab(k - 1) === "," )) { pushOwner = k; break; }
+    } else if (CLOSE.has(l)) { d--; if (d === 0) break; }
+  }
+}
+let members;
+if (pushOwner >= 0 && byOwner.has(pushOwner)) {
+  members = byOwner.get(pushOwner);
+} else {
+  [, members] = [...byOwner].sort((a, b) => b[1].length - a[1].length)[0] || [];
+}
+const webpackPush = pushOwner >= 0 && byOwner.has(pushOwner);
 
 // --- Turbopack container ----------------------------------------------------
 // ⭐ A second packer, a different container syntax, the same porting unit.
@@ -204,7 +240,17 @@ for (let i = 0; i + 2 < T.length; i++) {
 // --- array-form container: `[function(…), function(…)]` ---------------------
 let entries = [];
 let containerKind = "ObjectExpression";
-if (!members || members.length < 2) {
+// ⛔ A POSITIVELY identified container is the container at ANY member count.
+// The `< 2` threshold below exists for the heuristic reader; applied to a
+// webpackChunk push it threw away single-module chunks: 3163 / 57f4964f
+// (one factory each) fell through to "no container", and 7871 (one factory
+// holding troika's worker table `[function(){…}, …]`) fell through to the
+// ARRAY reader and came back as 31 modules (14islands F12/F13). Same lesson
+// as the Turbopack one-factory chunk: the signature is the evidence, the
+// count is not.
+if (webpackPush && members && members.length >= 1) {
+  entries = members.map((i) => ({ id: String(val(i)), fi: i + 2 }));
+} else if (!members || members.length < 2) {
   // Fall back to the array form before giving up.
   const arr = [];
   for (let i = 0; i + 1 < T.length; i++) {
@@ -361,17 +407,28 @@ for (const { id, fi } of entries) {
         // sub-ids are require-able from other chunks (`ctx.i(subId)`), so a map
         // that only knows factory ids leaves the closure unclosed: 87 required
         // ids "missing" on basement.studio, every one an in-factory merge.
+        // ⛔ DO NOT SKIP THE CALL BODY. With the React Compiler, Turbopack puts the
+        // export's whole implementation INSIDE the declaration —
+        //   e.s(["useTheatre", 0, function(o, a, s, l) { …the entire component… }], 59278)
+        // — so "collect names, then jump past the matching `)`" jumped past the
+        // module: every `.A(id)` / `.i(id)` inside the component vanished from
+        // `requires`, the closure looked closed, and the runtime said "dependency
+        // not mapped" (darkroom §F-1: 12712 behind e.A inside useEffect). Names are
+        // read only at element-start positions of the declaration array (depth 2
+        // flat form, depth 3 paired form) so body strings are not mistaken for
+        // exports; the scan then continues INTO the call.
         let d2 = 0, lastNum = null;
         for (let j = k + 3; j < end; j++) {
           const l = lab(j);
-          if (OPEN.has(l)) d2++;
-          else if (CLOSE.has(l)) { d2--; if (d2 === 0) { k = j; break; } }
-          else if (d2 >= 1 && l === "string") exportNames.add(String(val(j)));
+          if (OPEN.has(l)) { d2++; continue; }
+          if (CLOSE.has(l)) { d2--; if (d2 === 0) break; continue; }
+          const startsElement = lab(j - 1) === "[" || lab(j - 1) === ",";
+          if ((d2 === 2 || d2 === 3) && l === "string" && startsElement) exportNames.add(String(val(j)));
           else if (d2 === 1 && l === "num") lastNum = String(val(j));
         }
         if (lastNum !== null && lastNum !== String(id)) subIds.add(lastNum);
         exportsAssigned++;
-        continue;
+        continue; // k advances by one: the call body is scanned like any other code
       }
     }
 
@@ -463,7 +520,23 @@ console.log(`  container: ${containerKind === "TurbopackChunk" ? "turbopack chun
 // of the next share a line, so the per-module line counts overlap by one each.
 // Say so rather than letting "more lines inside modules than in the file" read
 // as a bug in the reader.
-if (total > fileLines) console.log(`  ⚠    module spans overlap by ${total - fileLines} line(s): in a flat list one line closes a module and opens the next`);
+if (total > fileLines) console.log(`  ⚠    module spans overlap by ${total - fileLines} line(s): modules share lines (flat list, or a minified original)`);
+// ⛔ The overlap invariant is in CHARACTERS, not lines. Lines lied both ways:
+// on a beautified chunk "1,864 module lines in a 1,213-line file" was a real
+// wrong-boundary case that passed (14islands 7753 via the heuristic reader),
+// and on a MINIFIED original — the coordinates when js-beautify cannot parse
+// the file — 652 correct modules all "span" line 1, so a line rule is a
+// permanent false red (14islands F11). Factories never share characters in
+// any container shape, so the character sum is the invariant.
+{
+  const totalChars = mods.reduce((t, m) => t + (m.endChar - m.startChar + 1), 0);
+  if (totalChars > code.length) {
+    console.error(`FATAL — ${totalChars} module character(s) inside a ${code.length}-character file: the container boundaries overlap, so they are wrong.`);
+    console.error(`        Every downstream slice would carry the wrong bytes. Do NOT fall back to the flat layer map.`);
+    process.exit(5);
+  }
+}
+if (webpackPush) console.log(`  container identified by its webpackChunk/webpackJsonp push signature (positive), not by property count`);
 console.log(`  tokenized by acorn@${ACORN_VERSION} (pinned, spawned — not imported)`);
 {
   const aliased = mods.filter((m) => (m.aliases || []).length);

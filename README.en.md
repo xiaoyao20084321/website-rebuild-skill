@@ -1,7 +1,7 @@
 # website-rebuild-skill
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.13-blue.svg)](CHANGELOG.md)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-brightgreen.svg)](https://agentskills.io/)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-339933.svg)](#quick-start)
 
@@ -37,9 +37,9 @@ It follows the [Agent Skills open standard](https://agentskills.io/) and is buil
 - **Line-traceable reverse engineering** — every line in the rebuild points back to a line in the source bundle; bugs and oddities are copied verbatim, never "fixed"
 - **Quantified acceptance** — five automated comparison layers: console / network / DOM / geometry / **pixel-by-pixel**; every difference is either fixed or registered, never glossed over
 - **Source-form delivery** — the verbatim port is rewritten into a human-readable project (split into modules, named from evidence, provenance headers added) that **runs offline anywhere you copy it**
-- **Zero-dependency toolchain** — 59 Node scripts (47 stage scripts and gates + 7 shared libs + 5 sourcification/reconstruction tools); until the final stage, the pipeline installs no npm packages
-- **Dead sites can be rescued** — Wayback archive salvage: anchor + time-window selection of a coherent moment, raw bytes landed as a standard mirror, permanent holes honestly registered; three dead sites revived in practice
-- **Even RSC sites can be reconstructed** — server component source is never shipped (React Server Components / Next.js App Router), but its complete output (the flight stream) inlined in every page's HTML *is* the spec: reconstruct a buildable Next project from it and close with flight-semantics gates. Measured on a Next 16/Turbopack blog: 18/18 routes semantically identical; blind reverse-engineering graded against the public source scored ≈95% structure / ≈98% behavior
+- **Zero-dependency toolchain** — 70 Node scripts (51 stage scripts and gates + 9 shared libs + 10 sourcification/reconstruction tools); until the final stage, the pipeline installs no npm packages
+- **Dead sites can be rescued** — Wayback archive salvage: anchor + time-window selection of a coherent moment, raw bytes landed as a standard mirror, permanent holes honestly registered; five dead-site salvages in practice (four revived, one to full L3; one art layer certifiably lost — the failure mode is in the book)
+- **Even RSC sites can be reconstructed** — server component source is never shipped (React Server Components / Next.js App Router), but its complete output (the flight stream) inlined in every page's HTML *is* the spec: reconstruct a buildable Next project from it and close with flight-semantics gates. Measured on a Next 16/Turbopack blog: 18/18 routes semantically identical, and on a 144-route heavyweight: PASS 144/144; blind reverse-engineering graded against the public source scored ≈95% structure / ≈98% behavior
 - **Legal decisions belong to the user** — the skill only collects evidence and presents it; output defaults to private + noindex + not deployed
 
 ## Side by side: source vs rebuild
@@ -142,14 +142,14 @@ These are not style preferences. Each was learned by collision, and violating an
 | **Class B: platform-layer separation** | Shopify (platform / apps / upstream theme / site-specific code as four layers) | two Shopify stores, one a theme-fork custom shop |
 | **Class B: third-party asset buckets / headless CMS** | Storyblok (`/m/` transform endpoints), full Strapi upload-bucket mirroring | a ~1,800-image CMS bucket + an 864 MB Strapi bucket |
 | **Class B: serialized data-blob expansion** | Nuxt-style SSG data encoded into the page | a 63.5 KB blob (54% of the document) expanded to 566 KB of structured data, compared item by item |
-| **Class X: dead-site archive salvage** | Wayback CDX enumeration → anchor + time-window coherent capture → `id_` raw bytes → standard mirror; permanent holes honestly registered, alias backfills listed, parked-page autopsy blocks 200-type body-snatching | three dead sites, three causes of death, all revived: domain takeover (8/15 routes), platform reclamation (9/9 clean), in-place parking replacement (0 holes, 0/0/0) |
-| **Class C2: declaratively organized modern full-stack sites** | Next.js App Router (webpack / Turbopack), Nuxt 3 + Vite, R3F, Theatre.js — RSC flight and devalue payloads, server image endpoints, session-state prefetch all handled | six C2 targets: a 115-route full site (115/115 cross-side identical), a Three r182 WebGPU/TSL site, a Theatre.js WebGL long-take site, a product page (4 checkpoints pixel-zero), and more |
+| **Class X: dead-site archive salvage** | Wayback CDX enumeration → anchor + time-window coherent capture → `id_` raw bytes → standard mirror; permanent holes honestly registered, alias backfills listed, parked-page autopsy blocks 200-type body-snatching | five salvages, five shapes: domain takeover (8/15 routes), platform reclamation (9/9 clean), in-place parking replacement (0 holes, 0/0/0), DNS death + parking body-snatch (first-launch, full L3), manifest-driven art layer wholly unarchived (mustachelab — engine rescued, failure mode recorded) |
+| **Class C2: declaratively organized modern full-stack sites** | Next.js App Router (webpack / Turbopack), Nuxt 3 + Vite, R3F, Theatre.js — RSC flight and devalue payloads, server image endpoints, session-state prefetch, and compiled components embedded via verbatim graphs (transcribed micro-runtime) all handled | seven C2 targets: a 115-route full site (115/115 cross-side identical), a Three r182 WebGPU/TSL site, a Theatre.js WebGL long-take site, a product page (4 checkpoints pixel-zero), a heavy-WebGL studio site (C1+C2 hybrid, 144 routes), and more |
 
 ### Conditional or out of scope
 
 | Class | Type | Why |
 |---|---|---|
-| **C1** | Server-component sites (RSC / Next.js App Router) | Server component source is never shipped, but its complete output (the flight stream) inlined in every page *is* the spec. ⭐ **Doable since v0.3: reconstructive reverse engineering** — build a compilable Next project, closed by flight-semantics gates (measured: rauchg.com, 18/18 routes identical). No verbatim port; the deliverable is "human-written source + gate-proven equivalence" |
+| **C1** | Server-component sites (RSC / Next.js App Router) | Server component source is never shipped, but its complete output (the flight stream) inlined in every page *is* the spec. ⭐ **Doable since v0.3: reconstructive reverse engineering** — build a compilable Next project, closed by flight-semantics gates (measured: rauchg.com 18/18 and basement.studio 144/144 routes identical). No verbatim port; the deliverable is "human-written source + gate-proven equivalence" |
 | **D** | Server-behavior sites | The behavior lives server-side (CMS, inventory, A/B bucketing, personalization); **there is no portable client-side target** and no deterministic acceptance baseline |
 | **X (no archive)** | Vanished sites without Wayback coverage | Nothing left to mirror. ⭐ **Archived X sites can be salvaged** (see above); measured disappearance rate among past award-winning sites is about **29%** — which is why "mirror first, immediately" is discipline #1 |
 
@@ -197,18 +197,19 @@ The origin and proving ground of the methodology — every entry in the [changel
 | Optimus (v0-generated) | [v0-optimus-delta.vercel.app](https://v0-optimus-delta.vercel.app/) | Next.js + **Turbopack** container, the second bundler shape; ⭐ bundler-preserved export names turned naming from inference into transcription (16/20 tier-1) |
 | Lusion | [lusion.co](https://lusion.co/) | Creative studio site, 1.25 MB custom WebGL engine + 156 shaders; three routes **pixel-identical**, full **sourcification** — 389 modules, runs standalone anywhere |
 | EIGHT DESIGN | [eightdesign.co.jp](https://eightdesign.co.jp/) | Japanese design firm, **115-route full site** (Next.js App Router + Turbopack), first C2 target; 278 modules ported verbatim, **115/115 routes render identically cross-side** |
-| Raycast Keyboard | [raycast.com/keyboard](https://www.raycast.com/keyboard) | Raycast × NuPhy product page (Turbopack + DRACO 3D models); triage to sourcification **in a single session**, 4 checkpoints **pixel-exact zero** |
+| Raycast Keyboard | [raycast.com/keyboard](https://www.raycast.com/keyboard) | Raycast × NuPhy product page (Turbopack + DRACO 3D models); triage to sourcification **in a single session**; re-audited and brought up under v0.3.15: 13 lazy chunks + the 42-rung next/image ladder (browser-Accept ledger tree) + 51 MB of prefetch-payload images into the mirror, 61 chunks / 879 modules token gate 61/61, state-aligned pixel gate 4+4 self-bands ≤0.11, cross-side 5 checkpoints ≤0.01 |
 | Hubtown | [hubtown.co.in](https://hubtown.co.in/) | Unseen Studio's full-screen WebGL long take (Nuxt 3 + three.js + **Theatre.js**), the C2 exemplar of licensed animation state shipped in the bundle; landing pixel diff inside the same-side noise band |
 | ON.energy | [www.on.energy](https://www.on.energy/) | Energy company site (Nuxt 3 + WebGL GLB scene + **Storyblok headless CMS**), first full CMS asset-bucket mirror (~1,800 images); 55/55 routes error-free, hero video pixel-zero once frame-pinned |
 | Milk Network | [milknetwork.com](https://milknetwork.com/) | Saudi brand agency site (webpack + GSAP + **Strapi CMS bucket**), first **bilingual RTL** site (en/ar, 122 paired routes); all 15 main modules sourcified and delivered in chunk form, animation end-state pixel-exact zero |
 | Hashgraph VC | [hashgraphvc.com](https://hashgraphvc.com/) | VC site (Nuxt 3 + Three r182 **WebGPU/TSL** + Sanity CMS), ⭐ **first rebuild executed end-to-end by a non-Claude runtime (Codex)** — 166/166 response bytes identical; also the birthplace of **concatenative decomposition**: 449k lines cut into 2,043 semantically named parts, byte-identical on reassembly |
 | Overworld Audio | [overworldaudio.com](https://overworldaudio.com/) | Game-audio studio site (Nuxt 3 + THREE/Theatre + **Howler**), ⭐ **sound became an acceptance surface for the first time** — 98/98 sound pool fully loaded, zero audio 404s; birthplace of "the pool is the ledger" capture |
 | Guillermo Rauch's blog | [rauchg.com](https://rauchg.com/) | ⭐ **First C1 (RSC) reconstructive reverse engineering** — a buildable Next project reconstructed from the flight stream, **18/18 routes pass the semantics gate**; also the birthplace of **blind reverse-engineering graded against the answer key**: ≈95% structure, ≈98% behavior, 7 dependency versions pinned exactly from byte evidence |
-| basement.studio | [basement.studio](https://basement.studio/) | Heavy-WebGL design studio site (Next 16.3 + React 19 streaming + three/R3F + Sanity), a C1+C2 hybrid week-scale campaign **in progress**; flight semantics gate **PASS 144/144**, module bijection 50 pairs zero violations, a `staticSiblings` fossil pinned an unlinked dark route |
+| basement.studio | [basement.studio](https://basement.studio/) | Heavy-WebGL design studio site (Next 16.3 + React 19 streaming + three/R3F + Sanity), a C1+C2 hybrid week-scale campaign, **functionally closed out**: flight semantics gate **PASS 144/144**, module bijection 50 pairs zero violations; the 3D office scene, a 16.5k-line ScreenUI arcade engine, two offscreen workers, and the mux/tweet lazy families all run inside the rebuilt project via **verbatim graphs + a transcribed micro-runtime** (birthplace of v0.3.7's fourth delivery form), 12-route sweep 10 CLEAN |
+| First Launch 七點半的太空人 | — (gone) | ⭐ **First class-X dead site taken through the full L3 pipeline** — a 2013 Awwwards site (jQuery + skrollr scroll narrative) rebuilt from a Wayback anchor at 2015-01: 27 permanent holes honestly registered, numeric gate **9,856 samples identical**, pixels exact-zero at 7/9 checkpoints, self-contained deliverable runs offline |
 
 ### Boundary samples and dead-site salvage
 
-Representatives from 43 probed sites that drew the boundary — **the boundary is measured, not declared**; three dead sites have been salvaged back to life (L1 mirror archives).
+Representatives from 43 probed sites that drew the boundary — **the boundary is measured, not declared**; five dead-site salvages measured: four revived (three at L1; first-launch through the full L3 pipeline, see above), one with its engine rescued and its art certifiably lost — **failure modes go in the book too**.
 
 | Site | URL | Class | One-liner |
 |---|---|---|---|
@@ -219,13 +220,14 @@ Representatives from 43 probed sites that drew the boundary — **the boundary i
 | darknetflix.io | — | **X→salvaged** | Domain takeover; ⭐ recovered from Wayback (anchor 2020-07, 8/15 routes revived, 92 permanent holes honestly registered) |
 | umamiland | — | **X→salvaged** | Platform reclamation; ⭐ recovered from Wayback (**sweep 9/9 routes clean**, probe→seed iterative convergence) |
 | jiouhe.com | — | **X→salvaged** | Replaced in place (domain alive, serving a parking page); ⭐ recovered at anchor 2018, **0 permanent holes, 0/0/0**, scroll-wheel frame animation fully revived — birthplace of the parked-page autopsy and typo-twin normalization |
+| Merlin's Mustache LAB | — (gone) | **X→engine rescued, art certifiably lost** | ⭐ Names the second class-X failure mode: **a complete mirror that cannot revive the site** — code layer 100% (manifest-driven circuit-board engine, CreateJS-as-loader + Swiffy, fully readable), art layer 157/160 assets never captured by any archive (IA does not execute JS); all 157 holes derived line-by-line and registered, stopped at L1 + engine docs |
 
 ## Repository layout
 
 ```
 skills/website-rebuild/    # the skill itself, laid out per the agentskills.io standard
 ├── SKILL.md               #   main pipeline + triage + disciplines (loaded whole on activation)
-├── references/            #   18 scenario guides (loaded on demand)
+├── references/            #   20 scenario guides (loaded on demand)
 ├── assets/templates/      #   document templates
 ├── scripts/               #   zero-dependency Node stage scripts and gates + lib/ shared modules
 │                          #     every stage before sourcification lives here
@@ -249,7 +251,7 @@ Before anything goes public, per-asset copyright **forensics** must be completed
 
 ## Roadmap
 
-- **v0.3 landed**: C1 (RSC) reconstructive reverse engineering — the flight coordinate system (flight-decode), the semantics gate (verify-flight, global module-id bijection), the body reconstructor (flight-to-mdx), the runtime gap reconciler (reconcile-gaps), and the `rsc-reconstruction.md` guide; measured on rauchg.com, 18/18 routes semantically identical, blind reverse-engineering graded against the answer key.
+- **v0.3 landed**: C1 (RSC) reconstructive reverse engineering — the flight coordinate system (flight-decode), the semantics gate (verify-flight, global module-id bijection), the body reconstructor (flight-to-mdx), the runtime gap reconciler (reconcile-gaps), and the `rsc-reconstruction.md` guide; measured on rauchg.com, 18/18 routes semantically identical, blind reverse-engineering graded against the answer key. The v0.3.2–0.3.7 series kept evolving through the basement campaign and others: the semantics gate tempered on a 144-route heavyweight (bijection audit rebuilt), three dark Turbopack shapes mapped, the first class-X site through full L3 plus the "complete mirror, unrevivable site" failure mode recorded, Sanity CMS entered the reference set, and the fourth delivery form — verbatim graphs + a transcribed micro-runtime.
 - **v0.2 fully landed**: concatenative decomposition (v0.2.0) with directory grouping and chunk maps (v0.2.8), the three-level endpoint and handover boundary (v0.2.1), the sound acceptance surface (v0.2.2), the render-breadth gate (v0.2.3), archive salvage (v0.2.4–0.2.6), smoke-test CI (v0.2.7).
 - **Two open gaps in sourcification**: name recovery is bounded by how much evidence the code left behind — measured: one flat site had 63% of locals with no usable evidence; one modular site kept hash ids for 27/46 modules. This is not debt — **a wrong name is worse than a hash, because a hash makes you go look**. The other gap: module headers currently state facts and provenance only; **"what is this module for" still needs a human** — a tool can't write it, and writing it wrong is worse than leaving it blank.
 - **Long term**: harder C1 shapes — inference depth for server-side **logic** (not just rendered output), enumeration of hidden route spaces, rebuilding dynamic image/OG generators; and whether class D (personalized, no deterministic baseline) has a comparable subset.
@@ -258,7 +260,7 @@ Before anything goes public, per-asset copyright **forensics** must be completed
 
 Versions advance with real rebuild projects: every feature and fix shipped was first validated on at least one complete project.
 
-Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.2** — the semantics gate tempered on a heavy site: basement.studio (144 routes, React 19 streaming, Vercel dynamic streams) **144/144 semantically identical, module bijection 50 pairs zero violations**; six new normalizations, the bijection audit rewritten as parallel equal-tree pairing (it had been silently idling), a `staticSiblings` fossil pinned an unlinked dark route.
+Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.15** — arrival and phase are two different states: raycastkbd (an L3 from the v0.1.69 days) re-audited against v0.3.14 — the port itself held, but the mirror gate was blind in three places underneath "closure = ∅" (`/_next/image?url=` rungs dropped as pages, 13 Turbopack loader-stub files never requested, 51 MB of unregistered egress carried by a route-prefetch payload); brought up the same day with eight tool-level lessons: extract-refs treats srcset/proxy rungs as assets, slice-modules carries the Sentry prologue outside the container verbatim (token gate 0/54 → 61/61), serve gets a fallback chain and keeps a stub host's DSN a DSN, `pixelcompare --hold/--hold-after/--hold-grace` (a GLB decoded on a worker is a state you wait for, not one you pump to), cold-audit recognises the one-parameter factory, make-standalone takes a mirror chain; selftest 71→86.
 
 ## Contributing
 

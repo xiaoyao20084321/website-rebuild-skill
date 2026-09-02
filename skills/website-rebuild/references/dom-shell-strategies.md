@@ -22,6 +22,10 @@
 再问：原站 DOM 由谁生成？
 ├── 平台导出物（Webflow 等：镜像 HTML 即最终产物，含 webflow.js、平台 data-* 体系）
 │     → 策略 A：零重写 shells（镜像 HTML 经登记变换直接生成页面）【lando】
+├── 手写静态站（无构建器或仅 CoffeeScript/Compass 级编译；HTML/CSS/JS 即作者源码）
+│     → 策略 A，且站点自定义变换常为 0——只剩内置 T-LOCALIZE/T-NOINDEX。
+│       实测 2013 年 skrollr 站：4+1 变换、verify-shell 全 hunk 可重放；
+│       目录模板的 port/ 层可不设（登记！）："逐字移植"与镜像重合【firstlaunch】
 ├── 静态单页（单个 index.html 巨页，构建器产物但结构可直接切分）
 │     → 策略 B：脚本切组件（生成脚本保守切分，验收 diff 为空）【oryzo】
 └── 框架编译产物（Vue SPA / Next RSC / Nuxt SSR 等，DOM 由运行时/服务端渲染）
@@ -239,6 +243,16 @@ else { /* 生产路径 */ }
 **两个方向都别走岔**：不要因为"块在量矩形"就把它升格成"DOM 即场景图"——没有引擎在读全站排版，写成策略 D 会让后来的人以为外壳选型被锁死了；也不要因为"站上没有 3D"就只断言类名和样式字符串——那正是这条弱化约束**唯一**会失效的方式。
 
 ## 6. 常见坑（各策略通用）
+
+0. **JSON 数据岛里的 URL 是内容，不是地址——T-LOCALIZE 不许进岛**【14islands】。pages router 的
+   `<script id="__NEXT_DATA__" type="application/json">`（以及 JSON-LD）里既有资产地址也有
+   **文本位置的 URL**（portable text 的 `markDefs.url`/`externalLink.url`、正文里的裸链接）；
+   内建 T-LOCALIZE 的守卫只认 `>URL<` 与 `"children":"URL"` 两种位置，实测 17/104 路由的
+   文章内容 URL 被改成 `/`，而外壳字节门全绿（改写本身就是登记变换）。正确形状：**岛整段
+   保真（登记为 T-DATA-KEEP）**，运行时由 JSON 拼出的资产 URL 交给服务层 `serve --rewrite` /
+   `/ext/<host>/` 响应改写（hashgraphvc 6.2 / 14islands 6.4 同族）；Nuxt payload 那种"岛内
+   全是资产地址"的站另当别论（verify-payload 路线），**判据是岛里有没有文本位置的 URL**，
+   不是框架名。
 
 1. **自创补偿性 CSS 会反转成 bug**：JS 机制没对齐时用 CSS 补观感，等 JS 对齐后补丁全部反转——rogier 十余个视觉 bug 全部源于此。"宁可先不像，也不要发明规则"【rogier】。
 2. **门只断言想到的字段是盲的**：`<main>` 只比 3 个固定字段抓不到"shell 组件发明了源站没有的 DOM 属性"；修法是**并集全量比对**替代字段名单【kimi】。

@@ -1,5 +1,383 @@
 # 更新记录
 
+## v0.3.15 — 到达与相位是两种状态：raycastkbd 复审补齐（镜像门的三处失明 + 切片的容器外字节）
+
+raycastkbd（Turbopack / Next 16.3 / R3F，v0.1.69 单会话跑完的 L3）按 v0.3.14 复审：**移植本体
+经得起最新仪器**（module-map 860 模块一致、verify-module-map 54/54、cold-audit 54/54），但证据基座
+按新标尺有四处阻塞——19 个 `/_next/image` 变体是 `*/*` 回退字节且 srcset 阶梯 42 只抓 19（双 Accept
+采样 3/3 分叉、`Vary: Accept`）；13 个懒加载 chunk + 7 个 loader-stub 目标模块从未进镜像；滚动走查触发
+10× `misc-assets.raycast.com` 未登记外联（changelog 路由预取载荷里的 release 图，51 MB）+ Sentry 桩造成
+的 console error；像素自比带宽不为 0（3D 场景到达帧）。同日补齐：懒 chunk 13 + release 图 10 + robots/
+sitemap 入镜像（首轮即闭）、42 条阶梯以浏览器 Accept 进独立记账树 `mirror-negotiated/`（verify-mirror
+两树全绿）、61 chunk / 879 模块重切、**verify-tokens 61/61 对压缩原件不剥前奏**、probe 两侧 CLEAN +
+external 0、像素门 4+4 交错自比带宽 ≤0.11（走查 25% 检查点从 1/3 概率 2.91 归零）+ 跨侧 5 检查点 ≤0.01 PASS。REBUILD_PLAN / engine-notes / DEPLOY 七节 / `docs/gates.sh` 补写。八条工具级 +
+四条文档级回哺：
+
+**镜像门的三处失明（都在"闭包 = ∅ 且五项全绿"底下）**：
+1. `lib/extract-refs`：**srcset 候选按构造是资产，`?url=` 图片代理是资产**——"同源无扩展名 = 页面"
+   规则把 `/_next/image?url=…&w=640` 整族丢掉，srcset 形态找到 42 条、同一函数里全部丢弃。现在 srcset
+   候选带 `{asset:true}` 直通、`[?&]url=` 视为资产、裸 `src=` 属性另有 4a 形态；`/about?tab=2` 仍是页面。
+2. mirroring §8 checklist 新增三行：Turbopack **loader-stub 家族**（`e.v(t=>Promise.all([css,js].map(e.l))
+   .then(()=>t(id)))` 只在交互态请求；从 module-map 聚合"require 全集 − 定义全集"查，路径按 runtime 常量
+   `r="/_next/"` 拼）、**路由预取载荷是外联的载体**（`?_rsc=` 载荷在镜像里、其内绝对 URL 由浏览器直接去要；
+   netcapture 没传 `--hosts` 连同注册域子域也看不见）、**next/image 阶梯按字节穷举且按浏览器 Accept 抓**。
+3. legal §2.6：`GTM-/G-/UA-` 是清单里的一行不是清单——PostHog token / Rewardful id / Sentry DSN / Vercel
+   Insights 各是一条，附 grep 形状。
+
+**切片与服务层**：
+4. `slice-modules`：**容器不是整个文件**——每个 chunk 开头 285 B 的 Sentry `_debugIds` 前奏与 `//# debugId`
+   尾注逐字带走，gen 头写 prologue/epilogue 字符数与**完整**再生成命令行（此前只写 `--closure`，照抄即
+   ENOENT）；verify-tokens 由 0/54（恒差 87 token）直接到 61/61，不加任何对齐旗标（VG §4.20：门不给生产者
+   开豁免口）。
+5. `serve`：`--fallback-root` 成**回落链**（`mirror-negotiated,mirror`，两侧同链）；**桩主机的 DSN 保持是
+   DSN**——`https://<key>@oNNN.ingest.us.sentry.io/<id>` 改写成 `http://<key>@127.0.0.1:<port>/ext/<host>/<id>`，
+   SDK 按源站那样初始化、信封打进桩（此前归一化成裸路径 → 两侧 `Invalid Sentry Dsn`，CLEAN 红而无静态门能见）。
+   `make-standalone --mirror a,b` 同一份链合同（交付物带的是浏览器字节，不是回退字节）。
+6. `pixelcompare --hold <expr> --hold-after N --hold-grace ms` + pixel-walk 透传与诊断转发（determinism §7.1）：
+   **状态分两种——泵到的用 `--ready/--after-ready`，等到的用 `--hold`**。GLB 在 worker 里解码是真实时间事件，
+   轴体动画走虚拟时钟：绝对泵 → 1/3 概率拍到未到达（2.91）；状态相对泵 → 两侧绝对泵数不同、相位错开
+   （恒 1.7）；泵前 hold → 请求永不发出（60s 超时，页面要在泵的世界里才开口要）；`--hold-after 30
+   --hold-grace 1500` + 绝对泵 → 带宽归零。grace 是墙钟 settle，登记为偏差。pixel-walk 此前吞掉
+   pixelcompare 的 "ready after N" 行，READY 没触发的走查与对齐了的走查无法区分——现在逐行转发。
+7. `cold-audit-modules`：认 Turbopack 的**经典单参工厂** `function(C){ C.n(C.i(id)) }`（loader-stub 家族的入口 chunk
+   用它注册 stub 目标的再导出）——此前落在两种签名之外，7 个补抓 chunk 里 6 个报"只查了 2/3"。
+8. selftest 71→86：srcset/代理阶梯 3 条、切片前奏/尾注/命令行/token 往返 5 条、serve 回落链 + DSN 6 条
+   （loopback 起服务，无浏览器）、cold-audit 单参工厂 1 条。
+
+**文档级**：VG §4.20（切片交付的 token 门对整个文件）；determinism §7.1（到达 vs 相位协议表）；
+legal §2.6 标识符清单扩展；mirroring §8 三行。方法论一句话：**"闭包 = ∅"只对提取器看得见的形状成立——
+每次新形状（代理 URL、loader stub、预取载荷）都要追溯重验旧绿。**
+
+## v0.3.14 — 旧项目对新标尺：点名扁平产物、门订阅的域、活世界的骰子（samsyninja 复审回哺）
+
+samsyninja-rebuild（2026-08，M0–M15，采纳时 skill 还是 v0.1.68）拿 v0.3.12/13 复审：L3 形状成立、
+门全绿，但按新标尺有四处阻塞——分发面与 README 自述矛盾（用户裁定：小范围预览、分发由使用者考量，
+原话入 §D）、镜像账本无 sha256 且**规格书本身不在账**、CDN 变体字节等价从未证、像素残差无带宽。
+同日补齐 M16–M21：账本重建 + `verify-mirror` 五项全绿（含回源抽样 6/6、origin 对 `/about*` `/works*`
+的 301 首次入 `redirects.tsv`）、CDN 74/74 长度 + 26/26 sha256、CLEAN 门补 Network/Log 域 + 外联白名单
++ 音频面、冻结像素门 4+4 交错自比带宽三视图 PASS + DOM 文本 4/4 一致、冷头点名 964/4770 零 UNKNOWN、
+REBUILD_PLAN 归模板（§6 偏差 20 条 / §Q 怪癖 35 条 / §D 6 条）。回哺一件工具、五条文档：
+
+**新工具 `scripts/cold-audit-decls.mjs`（M(n) 冷头点名，扁平产物）**：Vite/esbuild/Rollup scope-hoisted
+产物没有模块容器，`cold-audit-modules` 无处下手；点名单位改为**深度 0 声明**（class / function /
+const-let-var 链每个绑定，含解构），在 acorn token 流上列出、限定到应用区间，逐条判 cited（port 注释的
+`pretty L…` 区间含它，`--slack 1`）> override（`collapsed` / `omitted` / `ported`，范围级可带 `match`
+只收编译期常量）> named > UNKNOWN，报 `n/N examined`，找不到的 override 即 FATAL。实测首跑 349 条
+UNKNOWN **零缺口**：vuex / vue-router / TSL 别名块 / partysocket+uuid / three addon 模块级作用域、SFC
+编译器提升常量、一整段**主线程重复打包的 worker 模块**——归桶的过程就是那份人工评审第一次被写下来。
+它也是"手写移植 + 冻结快照当 port/"形态里 mirror→port 那一段唯一的机器裁判（readable-source §3.0.7）。
+selftest 66→71（深度 0 收集 / slack / match / FATAL / 严格模式）。
+
+**文档级**：verification-gates §4.12 **门订阅的 CDP 域不覆盖它声称的断言面**（只订 Runtime 的"零 404"门
+跑了十四个里程碑全绿——三项断言只做了最不会红的 1/3）；legal-and-deploy §3.3 5b **分发面事实**（仓库
+可见性 / 推送 / 本体入库 / 公网可达是四个事实，与"产物里有什么"是两个维度——没人把它们放到同一页给用户
+看）；determinism §2.6 **媒体钉帧**（hook `createElement` 抓不挂 DOM 的 `<video>`，pause + currentTime=0
+等齐 seeked）、**`Network.setBlockedURLs` 挡不住 WebSocket**（`--host-resolver-rules` 才是）、**reseed 是归类
+实验不是调参**（残差格 34→2 / 61→0 证明是骰子相位，同侧带宽照旧）；environment-traps §9.6 **`npx` 两层进程**
+（杀 npx 留 vite——:5199 上一个 8 天 18 小时的孤儿，ppid 1）。
+
+## v0.3.13 — 梯顶的最后一段：状态对齐、优化器产物、多 chunk 可读树（darkroom 收官回哺）
+
+darkroom.engineering 无人值守跑到**梯顶**：三处 UNCLASSIFIED 像素残差全部归类到 0.00（/about 走马灯、
+/work 场景挂载 = 泵分块内的相位差，`--chunk 1 --ready --after-ready` 归零；looped/badomens = 重建
+静态树缺 next/image 优化器产物，镜像字节优先补齐后归零）；M(n+1) 可读树 **278 模块/43 chunk
+token 级精确**（105 个 tier-1 命名），verify-fresh-next 10/10，verify-standalone static + `--full`
+PASS（复制出去断网装/建，副本 sweep 8/8）。v0.3.12 的 module-map 修复实弹：6 模块补回异步边，
+项目侧文本补边退役为断言。§F 11–17 本版全部落地：
+
+**工具级**：`pixelcompare --after-ready N` / `--chunk N`（状态对齐协议：两侧各自 READY 后再泵 N 帧，
+分块粒度 = 对齐分辨率，determinism §7）；四个 darkroom 工具入 tools/——`sourcify-chunk.mjs`
+（多 chunk 站按 canonical 位逐 chunk 跑三件套，闭包 id 与 map 同型）、`accept-names.mjs`
+（name-modules 只提名，接受步默认只收 tier-1）、`harvest-optimized-images.mjs`（优化器产物是像素门
+的一层资产：镜像字节优先，本机优化器兜底并登记）、`verify-fresh-next.mjs`（Next 链的新鲜度门，
+前提 `generateBuildId` 钉死）；modules-to-src 对 Turbopack 三参工厂按 `(ctx, module, exports)` 命名
+（此前套 webpack 名：位置对、可读性反）；verify-standalone 静态扫描跳过 `.next/`（构建产物里的
+构建机绝对路径不是泄漏）。
+
+**文档级**：readable-source §3.0.1.1（多 chunk 三件套 + 接受步）、§4.5.1（Next 链 verify-fresh）、
+§4.6.1（`.npmrc` 是交付物的一部分）；determinism §7（状态对齐协议）；rsc-reconstruction §3.5
+（优化器产物层 + `images` 配置从 srcset 反推，`qualities` 默认 [75] 会把 90 静默压回 75）。
+
+## v0.3.12 — 声明体里的边：React Compiler 把模块塞进了 e.s()（darkroom C1 收口回哺）
+
+darkroom.engineering（Next 16.3.2/Turbopack + React 19.3 experimental + React Compiler + StyleX +
+three r185 WebGPU/R3F，8 路由，Satus 半开卷靶）无人值守跑到 M(n)：**verify-flight 8/8 双射 32 对**、
+28 客户端组件逐字图（158 模块/5.1MB）经 `next start` 拓扑 sweep 8/8 CLEAN、像素门 home/contact/
+developers/privacy/about 0.00（自比带宽 0）、冷头审计 PASS、DEPLOY 权利表；三处像素残差如实登记
+UNCLASSIFIED（=未过）交下一段续跑。§F 十条回哺，本版落五条工具级 + 五条文档级：
+
+**核心新知——`e.s()` 不再是声明，是模块本身**（§F-1）：React Compiler 下 Turbopack 把导出的
+**整个实现内联进声明**——`e.s(["useTheatre", 0, function(o,a,s,l){ …整个组件… }], 59278)`。
+module-map 的 `s` 分支"收完导出名跳过调用体"于是跳过了整个模块：体内每个 `.A(id)`/`.i(id)`
+从 `requires` 消失，闭包看似闭合，运行时报"依赖未映射"（12712 藏在 useEffect 的 `e.A` 后）。
+修法：导出名只在声明数组的**元素起始位**（深度 2 扁平形 / 深度 3 配对形）读，体内字符串不再被
+当导出名；扫描**继续进入调用体**。实弹：59278 requires 从 3 条到 5 条（+12712/+2074），导出名
+精确到 `useTheatre`。这条与 v0.3.7 的"三形态同权"是同一课的下半句——同权的前提是扫得到。
+
+**其余工具级**：verify-flight N2 css-module 哈希位宽 `{8}`→`{6,8}`（Turbopack 7 位 hash + 下划线
+开头 local 段被判"有行为"）+ LayoutRouter `notFound/loading` 元组尾部空样式槽剥除（镜像的槽被
+N5 strip 成 null、重建侧 `[]` 化石保留 → `[tree]` vs `[tree, []]` 假红）；cold-audit-modules 认
+merged map（`locations[]` 取 canonical 位，`source` 优先于 `<chunk>.pretty.js` 命名——此前要摊平
++ 软链目录才能读）；新 `tools/assemble-static.mjs`（像素门两侧同经 serve.mjs：`next start` 侧
+不注入 probe-shim → 镜像帧 BLANK/重建有画的冻结不对称）。selftest 62→66。
+
+**文档级**：rsc-reconstruction §3.3 从 flight 反推 next.config 的行为证据（`cacheComponents` 由
+`ClientPageRoot.serverProvidedParams===null` 发射、experimental React 四旗）+ §3.4 flight-to-tsx
+四陷阱；porting-discipline §2.5.2 逐字图三条硬规则（全站单图单例、T-SSRGUARD 浏览器≠服务端
+chunk、坏字节用同形抛错工厂顶替）；determinism §6 像素门两侧同经 serve.mjs。
+
+## v0.3.11 — 正签名的下半句：单模块 chunk 也是容器（14islands L3 收口回哺）
+
+14islands 续跑到 **L3**：`7753`（token 流上切 652 个压缩原字节部件，覆盖 99.8%）与 `2186`
+入港，verify-tokens 25/25；像素巡航 12 路由×5 检查点（`/culture` 0.04 稳定残留登记不算过）；
+25 chunk 摊成 `src/chunks/*` 1,231 模块文件（name-modules + 17 条 tier-0 裁决附"读到了什么"，
+作用域安全重命名 1,225），**verify-module-map 25/25**；`standalone/` 自足交付物
+verify-standalone `--full` PASS、byte-manifest 2,808/2,808、像素 home/culture 0.00。第二轮
+七条回哺，全部工具级：
+
+**v0.3.10 的正签名读法当天就被实弹修正**（F12/F13）：签名找到了容器，下游 `members.length < 2`
+的门槛却把**单模块 chunk** 当"没找到"——3163 / 57f4964f（各一个工厂）报"no container"，
+7871（一个工厂里装着 troika 的 `[function(){…},…]` worker 表）回退到数组读法报 31 模块。
+fork 的初判"签名只认文件开头"是表象。修法与 Turbopack 单工厂那课同形：**正签名定位的
+容器在任何成员数下都是容器**，不再回退。**行数不变量改为字符不变量**（F11）：压缩原件
+（js-beautify 解析失败时的坐标）652 个正确模块全落在第 1 行，"模块行数 > 文件行数"是
+恒假红；工厂在任何容器形态下都不共享字符，字符和才是不变量。
+
+**其余**：verify-module-map 两个边界分支同一套剥键逻辑（F16：合成 char 边界指到 id 起点时
+每模块恒差 2 token）+ 键正则认压缩器的指数记法 id `71e3:`（F14，modules-to-src 同修）；
+make-standalone **无 `--shell` 即打印 usage 退出**（F15①：一次 usage 试探把 1.27GB 镜像拷进
+src/public）、引用提取解 HTML 实体（F15②：srcset 的 `&amp;w=` 让 628 个在场变体报"落范围外"）、
+无 index.js 或 `--no-build` 不生成 esbuild 构建脚本（F15③）、新增 `--keep-own`（F17：`--own`
+的"单一构建产物"语义把 25 个再发射 chunk 的外壳全改写到同一个 gen 文件，首屏空白而 CLEAN/
+请求失败全绿——像素门的非空帧前置条件是唯一说话的门）。selftest 59→62。
+
+## v0.3.10 — 排版字节不是原件：token 门与 webpack 正签名（14islands L2 收口回哺）
+
+14islands.com（Next 13.4 pages router + Sanity 直连 + R3F/scroll-rig，104 路由）无人值守跑到
+L2：L1 关账（全路由 netcapture 1,243 GAP 全补 + 三条字节推导阶梯；verify-mirror 2,782 行
+五项 PASS；断网 sweep 104/104）→ M1 钉栈 → M2 策略 A 外壳（verify-shell 121 hunk 全可重放、
+verify-offline 104/104、verify-refs-served 5,670/5,670）→ **23 个站点 chunk 逐字再发射**、
+token 门 23/23、`__NEXT_DATA__` 门 104/104、像素门三路由 0.00 → 冷头审计 + DEPLOY 取证草案。
+战役产出十条回哺，本版落六条工具级 + 三条文档级：
+
+**核心新知——js-beautify 会改变嵌套模板字面量的内容，且所有渲染门照绿**（F4）：
+`${iW(e)}:${t};` 被排成 `$ {\n iW(e)\n }: $ {\n t\n };`，能解析、能渲染、像素 0.00，token
+流 748,409 vs 748,398。**排版字节不是原件**——凡以 `_pretty` 交付（再发射/切片）的路线，
+token 流等价是必需门。落地：`lib/tokens.mjs` + `verify-tokens.mjs`（门）+ beautify-bundle
+产出后自查（账本新增 tokens 列，`DIFFER@n` 的文件只能当坐标、退出码 1）。
+
+**module-map 的 webpack 读法换脊柱（F1/F9）**：容器改由 `webpackChunk*/webpackJsonp` 的
+`push([[ids],{…}])` **正签名**定位——此前"属性最多的对象"这个计数在 three.js 400+ 导出映射
+面前输了（256 模块的 `_app` 报成 406 个 3 行模块），另一 chunk 报"1,864 行落在 1,213 行文件
+里"却不 FATAL（require 边碰巧在内）。对象/数组容器**模块行数 > 文件行数一律 FATAL**。
+
+**其余工具级**：`verify-nextdata.mjs`（F2：pages router 载荷门，verify-payload 的空白；`--a/--b`
+认目录，selftest 可离线钉）；`emit-webpack-chunk.mjs`（F3：多 chunk webpack 站的逐字再发射
+出口，Turbopack 路线的同构物，拼接门 + `--raw`）；beautify-bundle 对 `[slug]` 文件名喂无
+括号副本 + "输出 === 压缩输入"直接 FAIL（F5：CLI 对 -f 做 glob，四个页 chunk 静默停留 8 行
+raw）；mirror-site `redirects.tsv` 跨运行累积（F6：`--scope` 补页把它截成表头，`/work` 308
+消失）。selftest 50→59。
+
+**文档级**：JSON 数据岛里的 URL 是内容不是地址，T-LOCALIZE 不许进岛（F7，dom-shell §6.0）；
+pages router 的 chunk 全集从 webpack runtime `h.u`/`h.miniCssF`/`_buildManifest` 推导、
+`_next/data` 按路由表推导（F8，sanity-platform §4）；门的退出码不许经过管道 `tail`（F10，
+verification-gates）。
+
+## v0.3.9 — 标尺只有一把：镜像开始发浏览器的图片 Accept（basement D5 定案回哺）
+
+v0.3.6 入册的 `auto=format` 协商陷阱，本版从"文档警告"落成"工具行为"。定案数据
+（basement 镜像，全部盘上实测 + 双 Accept 采样）:魔数普查 391 个变体 59 个扩展名↔魔数
+分叉,但**双 Accept 采样 6/6 全分叉**——jpg/png 源在浏览器 Accept 下同样返回 webp
+(1.13MB png→61KB webp,体积差 18×),**分叉面是全部栅格变体**,魔数普查只看得见协商
+跨过扩展名边界的尖角。配套事实:响应 `Vary: origin, accept` 自声明协商;裸 Accept
+重抓 6/6 sha256 与镜像一致 = profile 级分叉,非时间漂移。偏差以 D5 登记进 basement
+项目(census 脚本与采样证据入库)。
+
+**工具落地(新共用库 `lib/negotiate.mjs`,合同 selftest 钉住,36→45)**:
+
+1. `mirror-site.mjs` / `reconcile-gaps.mjs`:图片 URL 的标准 profile 改发**浏览器同款
+   图片 Accept**(`IMG_ACCEPT` 逐字照抄 Chrome——标尺只有一把,不自创格式偏好);
+   判"是图片"优先信 CDP TYPE 列(reconcile-gaps 现在读 netcapture TSV 第 5 列),
+   其次 URL 拼写,next/image 代理**先解码 `url=` 再判**;裸 profile 保持 `*/*`
+   (它的职责是头过敏兜底,极简即本分)。
+2. **账本盲区补上**:manifest 每条新记 `profile` 与 `vary`——没有这两个字段,协商
+   响应与普通响应在账本里不可区分,分叉对一切审计不可见。
+3. `fingerprint.mjs` Step 0 采 Sanity 证据:projectId/dataset/API 主机/auto=format/
+   `_key` 计数,裸写/`\/` 转义/`%2F` 编码三种拼写归一(与 D1a 四形态同课),命中即
+   指路 sanity-platform.md——只采证据,判级仍看内容烘焙时点。
+
+sanity-platform.md §1.2 同步改写(处置第一条"已内置");SKILL.md version 与脚本表
+同步(0.3.7/0.3.8 期间 metadata 停在 0.3.6,本版归位)。
+
+**同日实弹回哺(darkroom / 14islands 双站开工)**:
+
+- fingerprint 的 Sanity 采集器首战即暴露覆盖缺口:darkroom 的 flight 只有
+  `:HC"https://cdn.sanity.io"` **preconnect 提示、零资产路径**——Sanity 在栈里
+  (Satus 脚手架)而页面不用其 CDN。sanityEvidence 增 `cdnRefs`(裸主机计数),
+  "有主机引用但无资产路径 = 去深层路由取证 projectId",selftest 45→46。
+- **协商面不止图片**:darkroom 全部路由有 `.md` 孪生 + `llms.txt`(`Vary: Accept`,
+  同 URL 按 Accept 返回 HTML/markdown),部分路由 `Vary: rsc, next-router-*`
+  (flight 的 header 协商形态)——账本 `vary` 字段第一天就把三族协商面照全了。
+- **Next + Vercel + Sanity 栈开工速查卡**入 sanity-platform.md §4:指纹速判
+  (App Router vs pages router × Sanity 三种接法)、--hosts 预设、协商面三族、
+  运行时资源族清单(darkroom 实测 well-known 五件套含 openapi.json)、
+  verify-flight 常用旗标。四站实测素材(basement/hashgraphvc/darkroom/14islands)。
+- **存量镜像的协商变体重抓落地形态——独立记账树**(basement D5 处置,用户裁定"重抓但
+  保留旧变体"):`mirror-negotiated/` 自有账本、同一套 urlpath 映射、记 profile/vary/
+  baseline;旧树零改动(git status 空),新树五项全绿。391/391,311 webp/79 avif,
+  217MB→39.5MB——**avif 份额随站与资产尺寸变**(14islands 4/616 vs basement 79/391),
+  协商结果只能写成分布。
+- **verify-mirror 弱标记误伤 404 模板**(darkroom M0 实撞):weak "refusal wording"
+  匹配到的是 flight 错误边界槽位名 `"forbidden":"$undefined"`——404 模板是全站
+  最小 HTML,唯独它躲不过 WEAK_MAX。修法有边界:**模板对弱标记豁免、强标记保留**
+  (WAF 拦下 404 探针把 Cloudflare 体写进模板的真场景仍然报红,那是要登记的镜像
+  失败)。selftest 双向钉住(46→48)。darkroom M0/M0.5 全绿收口(L1),顺带实测
+  "引用在案而源站不提供"族的闭包门表现:chunk 内嵌纹理目录表 71 个 .bmp 全 404,
+  逐 URL 进 external.txt 而非静默漏抓。
+
+## v0.3.8 — 门看不见的债：CSS 对账与 worker 供片链（basement 用户实测四连修回哺)
+
+basement 功能面收口后,用户在真浏览器里连报四障:顶栏无 logo 且换行、machine
+模式黑屏、Contact 电话浮层点了没反应、对讲机屏字体错。四障三根,全部入册:
+
+**CSS 面对账(rsc-reconstruction §3.2)——语义门只看 flight 树,看不见 CSS**:
+- ⛔ 逐字图交付下 DOM 外壳的类名活在 verbatim JS 编译串里,tailwind content
+  漏扫 = JIT 全不生成,塌法极具迷惑性(白 logo 黑底黑字"消失"、grid 塌、
+  reveal 幕布盖死全页);
+- ⛔ token 台账是**相对扫描面的**——"JIT 只编译用到的,这就是全集"在扫描面
+  扩大时作废;字体链三层全在、独缺 token 一层照样回退系统字体(flauta);
+- ⭐ carry-css 方法论:代表路由 SSR DOM 类名并集为需求面(**必须覆盖每个
+  路由家族,含备用模式家族**),镜像编译 CSS 机器搬运 tailwind 生成不了的
+  规则(@media 保留、keyframes 连带、body 基础规则单独一道),幂等可重跑;
+  源站自身死类照抄不修;数字开头类名的 CSS 转义分词陷阱(`\33 xl\:` 尾随空格)。
+
+**worker 供片链(porting-discipline §2.5.1 增补三条)**:
+- ⛔ worker runtime 的 registerChunk 以**烤死前缀**转等待键——换前缀供片 =
+  entry 静默不执行(全注册、零监听、零报错,死状签名要背下来);
+- ⭐ Worker 对象上**空字段 error 事件的第一嫌疑是脚本 URL 本身**(加载失败
+  的事件没有 message/filename,长得和跨域脱敏一模一样——先 curl 再理论);
+- worker 静默死的解剖:CDP 平铺 auto-attach + 恢复执行前注入三层消息账本。
+
+**环境陷阱 §9.5**:npm 生命周期钩子不跟人走——`npx next build` 直调不触发
+postbuild,钩子负责的产物(软链)悄悄消失,间歇性 404 伪装成"上轮修好又坏"。
+对策:关键产物挂多生命周期点双保险;自查清单加一条。
+
+## v0.3.7 — 第四交付形态：逐字图 + 转写微运行时（basement 收官回哺）
+
+basement 战役收官:34 个 DOM 外壳、ScreenUI(16.5k 行 preact-signals 引擎)、
+双 offscreen worker、mux/tweet 惰性家族全部以「逐字工厂 + 微运行时」跑进重建
+的 Next 应用——§2.5 的三种交付形态都接不上这个场景(端口活在**另一个应用的
+外壳里**,没有页面级替换点),故入册第四形态,判别器与做法进表。
+
+**核心新知——runtime 助手字母的语义只能从源站 runtime chunk 逐字转写,从调用
+点反推的"看起来能跑"错语义会在远处以无关形状爆炸**(porting-discipline §2.5.1):
+
+- `u.A=function(e){return this.r(e)(g.bind(this))}`:A 边是"resolve 后**以模块
+  require 为参调用**"——目标恒为 loader stub。shim 只 resolve 不调用,
+  next/dynamic 把 stub 当组件渲染,React 深处 `t is not a function`,栈不指 shim。
+- `u.n` 是 exportNamespace(exports **整体设为**该命名空间),不是 default 互操作
+  getter——猜错则重导出模块导出空,远处 React #306。
+- `e.v(值)` 三形态靠消费方消歧:worker 工厂(经 `i` 调用)/ css-module 表
+  (对象)/ loader stub(经 `A` 调用)。**修正 v0.3.3**:stub 会出现在组件
+  闭包里,"不进叶图"是错的;其 resolve 目标闭包必须同图在场。
+
+三个配套陷阱(各有实证):**registry 顶替前读该 id 在每个 chunk 作用域的注册体**
+(847851 主 chunk 证据像 hls.js,懒 chunk 里是 18.5k 行 mux 播放器组件——顶替
+成 npm 后文章视频死于 React #306);**id 碰撞**(自家 turbopack 构建对相同
+node_modules 派生与源站相同的数字 id,调试编译产物时判据是 chunk 注册表归属,
+不是数字);**闭包走查 `.i(`/`.r(`/`.A(` 三形态同权**(临时 grep 只匹配 `.i(`
+= 运行时"依赖未映射"补课)。
+
+## v0.3.6 — Sanity 场景入册：同一个 URL、两种字节（hashgraphvc / basement 回哺）
+
+Next/Nuxt 创意站的主流内容层 Sanity CMS 此前在 skill 里只有一行脚本注释。本版从两个
+已复刻项目（hashgraphvc L2 收口、basement 战役中）+ 一次 Step 0 探测（franshalsmuseum）
+回填出 `references/sanity-platform.md`，进分支路由表。
+
+**核心新知——`auto=format` 是内容协商，镜像与浏览器就此分叉**：带 `auto=format` 的
+Sanity 图片 URL 按请求 Accept 头选格式，而 mirror-site / reconcile-gaps 的全部 profile
+都是 `accept: */*`，从不声明图片格式支持——CDN 一律回退 JPEG，真浏览器同一 URL 拿
+avif/webp。实证（basement 镜像盘上现捞）：`…-1920x833@@auto=format&w=1200.webp`
+扩展名 `.webp`、魔数 JPEG——**源资产本身是 webp，被协商转码回 JPEG 落盘**，391 个
+`@@auto=format` 变体无一幸免。两侧都从镜像读，跨侧门与像素门照绿；这是"错的镜像能让
+下游门全绿"的又一实例，查法（魔数 vs 扩展名 vs 账本三方对照）与处置（浏览器同款
+Accept 补抓 / 存量登记偏差）入 §1.2。
+
+**判级纪律**：Sanity 本身不定级，**内容烘焙时点才定级**——构建期烘焙（不改判级）/
+局部 fallback 查询（B 类 API 快照，query-keyed 应答）/ 运行时装配 + 内容漂移（D 因素，
+对象改述为"某时点快照"）三形态，franshalsmuseum 的 C/D 判定就是第三形态。
+
+**其余入册**：变体阶梯两层展开（直连 + next/image 代理，代理 URL 要先解码 `url=` 再判
+主机，否则 off-host 普查整批失明）；运行时拼接 API base 普通 host 改写命不中（hashgraphvc
+偏差 6.2 的服务层模板改写 + 404 壳重试行为照抄）；`_key` 是化石不进 normalize 名单；
+`<sha1>-<W>x<H>` 文件名自带源尺寸与内容地址，变体归并按 hash 段做（13,870 引用收敛
+722 源资产）；`cdn.sanity.io/robots.txt` 按 project 路径逐条判定。
+
+待落地（下一个 Sanity 站实战时）：reconcile-gaps 请求头梯子加图片 Accept profile、
+fingerprint.mjs 认 Sanity 指纹并报 projectId、Next+Vercel+Sanity 栈开工速查卡。
+
+## v0.3.5 — X 类的另一半真相：镜像可完整而站不可复活（mustachelab）
+
+v0.3.4 证明抢救镜像能走完 L3;本版记录**它的对偶失败形态**并命名入册。
+Merlin's Mustache LAB(2014 Awwwards,"电路板即作品集",CreateJS 加载器 + Swiffy +
+清单驱动 DOM 引擎):代码层 22/22 全捕获、引擎逐行可读,而**画面层 157/160 资产在
+任何档案、任何年代、任何 host 拼写下零捕获**——IA 爬虫不执行 JS,凡 `LoadQueue(PATH)` /
+`RESOURCE.dir+file` 拼出来的 URL 从未被请求过。断网跑起来是一张纯白页。
+
+**规则修正(SKILL.md X 类 + archival-rescue §1.9)**:"CDX 无覆盖才是真不可做"**按资产层
+读,不按站读**。Step 0 新增分层覆盖侦察——读引用形态(静态标签 vs 清单拼接)→ 对代码
+暗示的资产子树做 CDX 前缀查询(collapse=urlkey 零行 = 任何年代零捕获,权威)→ 分层
+报告覆盖率;媒体层为零的站在锚点选定前就改判终点,不要跑到 M0.5 撞白屏。
+
+**洞账的补全集纪律**:wayback-mirror 内建洞扫描走静态提取,对 class-4(运行时拼接)
+整类失明——157 个洞一条没报。做法:站点侧推导器把清单机械展开(逐条带 init.js 行号)
+→ 对账 → 整批 append 进 wayback-holes.txt,它同时就是资产若回归的 seeds 清单。
+断网门语义照 §4.5:36 个去重失败 URL 逐条 ⊆ 洞账、账外为零——**门在全损的站上照样
+能证明"损失被完整登记"**。
+
+**外部档案没有可自动化的备胎**:archive.today 有 CAPTCHA(agent 不代过验证码),
+TimeTravel 聚合器不可达——都只能登记给人工。唯一现实的复活路径是**权利人本人**
+(该站母公司 bremen.com.tw 仍在线):"联系作者"进 DEPLOY.md 选项表。
+
+顺带入册两条小刺:`assets/<host>/` 跨 host 约定与源站自己的 `/assets/` 目录共用命名
+空间(本站 www 别名树落进了真实 assets 目录,无碰撞但属既存隐患);serve 端口按槽位
+分配,别的会话占 0-3 槽时 mirror 落 25001——探针别硬编码 21001。
+
+## v0.3.4 — X 类的成人礼：死站第一次走完 L3 全程（first-launch）
+
+此前三个死站抢救止于 L1。first-launch.com（2013 Awwwards Honorable Mention,
+jQuery + skrollr 七幕滚动叙事,约 2022 死亡、域名被停车页夺舍）从 Wayback 锚点
+2015-01 重建后,**整条下游管线原样跑通**:策略 A 外壳(T-LOCALIZE=4/T-NOINDEX=1,
+verify-shell 全 hunk 可重放)、数值门 32 检查点 × 146 选择器 **9,856 样本全等**、
+像素巡航在 0.1 自比带宽内(7/9 检查点精确零)、src/ 自包含交付物复制出 repo 断网
+CLEAN——没有一道门为"参照是档案"改语义。"标准镜像"从口号变成实测。
+
+**X 类新经验入 archival-rescue.md**:§1.6 验尸三件套(停车页 CDX 签名:
+`.well-known/*`/`ads.txt` 冒 text/html 200;根页 digest 断代;同 digest 交叉鉴伪——
+mobile.html 孤本与停车页根页同 digest,伪身不采)、§1.7 锚点偏置一次罩住别时代孤本、
+§1.8 Google Fonts 两跳种子(CSS→TTF 都问档案要当年字节)、§4.5 CLEAN 门死站语义
+(**失败 ⊆ 洞账**,且源站生产环境自己的 404 不是洞,照抄即保真)。
+
+**三个被数据抓住的工具缺陷,全部修复 + 自检钉死(33→36)**:
+
+1. ⛔ **wayback-mirror 的 off-host 普查从第一天起静默失效**——extract-refs 合同是
+   `onOffHost(host, href)` 传裸主机名,消费侧拿它 `new URL()` 必抛、`catch {}` 吞掉,
+   普查恒空:引用 Google Fonts 和 Vimeo 播放器的页面报"无 off-host"。**沉默的 catch
+   包住一个接口,是普查死亡的标准姿势**;selftest 现在钉着这份合同。
+2. verify-standalone 把 Compass 盖进 CSS 的 `/* line N, ../../x.scss */` 出处注释当
+   逃逸引用(注释跳过正则不认 `/*` 开头的行)——5 个假阳性全落在**神圣不可改的内容
+   字节**上。修门不修字节;自检双向断言(注释不报 + 真逃逸照报)。
+3. pixelcompare 的 pump 协议要求 `?__probe` 但没人自动补,裸 URL 报
+   "__pump never appeared" 且 pixel-walk 的 60 字符截断把提示裁掉、指向 serve 配置。
+   现在 pixelcompare 自动补参。
+
+**首个"源码已可读"的目标**(reverse-engineering / readable-source / dom-shell 各补):
+手写多文件站跳过 beautify 要**显式登记**;vendor 逐字节鉴真(skrollr 与上游 tag diff
+为空、jquery sha1 官方一致)一次杀掉整棵"魔改库"假设树;L3 不拆不重命名,等价门退化
+为一条 suffix 断言(src = 出处头 + 镜像字节的精确拼接);"可读"不是"可改写"的许可。
+verify-crossside 同步合同的边界立此存照(§0.26.1):rAF 循环引擎走 async 采样——
+force-jump 语义先读源码、jQuery trigger 同步驱动命令式层、三重 rAF 后采 inline style。
+
 ## v0.3.3 — turbopack 的三个暗形态：闭包不再对场景失明（basement C2 坐标系）
 
 basement 的 3D 场景在静态 require 图里**完全不存在**——CanvasLayer 经

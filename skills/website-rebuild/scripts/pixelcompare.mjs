@@ -85,8 +85,19 @@ const flag = (name, dflt) => {
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : dflt;
 };
 
-const URL_A = flag('a', null);
-const URL_B = flag('b', null);
+// ⭐ The pump protocol REQUIRES the shim, and serve.mjs only injects it when the
+// request carries ?__probe — so a URL without it is never what the caller meant.
+// Measured: a bare URL produced "window.__pump never appeared within 30s" nine
+// times in a row, and the truncated error (relayed through pixel-walk's 60-char
+// slice) pointed at the serve config, which was fine all along. Append it here,
+// once, instead of asking every caller to remember.
+const withProbe = (u) => {
+  if (!u) return u;
+  try { const x = new URL(u); if (!x.searchParams.has('__probe')) { x.searchParams.set('__probe', ''); return x.href; } return u; }
+  catch { return u; }
+};
+const URL_A = withProbe(flag('a', null));
+const URL_B = withProbe(flag('b', null));
 if (!URL_A || !URL_B) {
   console.error('usage: pixelcompare.mjs --a <urlA> --b <urlB> [--name home] [--out docs/pixelcompare] [--width 1280] [--height 800] [--settle 6000] [--ready expr] [--seed expr] [--label-a A] [--label-b B] [--format png|jpeg] [--quality 92] [--max-mean N] [--self] [--pump dt,frames]');
   process.exit(2);
@@ -111,6 +122,30 @@ if (FORMAT !== 'png' && (!Number.isInteger(QUALITY) || QUALITY < 1 || QUALITY > 
 const EXT = FORMAT === 'jpeg' ? 'jpg' : FORMAT;
 const SETTLE = Number(flag('settle', 6000));
 const READY = flag('ready', null);
+// --after-ready N: align on STATE first (the frame where --ready turns true on each side), THEN pump N more frames.
+// Waiting for an absolute pump count instead differs by one mount phase between the sides (darkroom /work: 1.8–2.5 at
+// pumps 180/210, 0 at 60/90/120/240 — phase noise, not a porting gap). Same-frame means state-relative time.
+const AFTER_READY = Number(flag('after-ready', '0')) || 0;
+// --hold <expr> [--hold-grace ms]: the OTHER half of state alignment. --ready/--after-ready
+// aligns on a state that is reached BY PUMPING (a mount phase in virtual time). But a
+// state reached in REAL time — a GLB decoded on a worker, a texture arriving — must be
+// waited for BEFORE the first pump, with the virtual clock still at 0: then both sides
+// pump the same absolute frames from the same starting state. Aligning such a state
+// with --after-ready instead makes the two sides' absolute pump counts differ by their
+// arrival jitter, and every time-driven animation lands at a different phase (raycastkbd
+// walk-025: exploded switch vs assembled switch, self-band a constant 1.7; with --hold
+// and absolute pumping 0.00). --hold-grace is the real-time tail after the predicate
+// (decode completion has no page-visible signal) — a stated deviation from "settle is a
+// page state", register it.
+const HOLD = flag('hold', null);
+const HOLD_GRACE = Number(flag('hold-grace', '0')) || 0;
+// --hold-after N: pump N frames FIRST, then hold. The arrival you wait for is usually
+// requested from inside the pumped world (an IntersectionObserver record, a mount effect,
+// the scroll drive reaching the section) — with the clock frozen at 0 the request is never
+// issued and the hold times out (measured: 60s, 5/5 checkpoints). N frames of virtual time
+// let the page ask; the hold then waits in real time; the remaining total−N frames pump the
+// same absolute clock on both sides.
+const HOLD_AFTER = Number(flag('hold-after', '0')) || 0;
 // ⛔ A LOAD-TIME SEED CANNOT DRIVE A PAGE WHOSE TARGET DOES NOT EXIST YET.
 // Measured: a site whose scroll container is created only after its preloader
 // finishes. The seed ran at `load`, found `scrollHeight - clientHeight === 0`,
@@ -381,22 +416,52 @@ async function capture(url, label) {
       chrome.reap();
       process.exit(6);
     }
+    // Real-time wait with the virtual clock frozen: nothing the page animates
+    // advances between two __pump calls, so after the hold both sides resume the
+    // same absolute clock from the same (arrived) state.
+    let held = !HOLD;
+    const holdNow = async (done) => {
+      const ok2 = await waitFor(async () => { const r = await evalJs(HOLD); return r === true || r === 'true'; }, 60000, label + ' hold')
+        .then(() => true).catch(() => false);
+      if (!ok2) {
+        console.error(`[pixel] FATAL: ${label} never satisfied --hold within 60s of real time (after ${done} pumped frame(s)) — do NOT compare this frame.`);
+        console.error(`        If the arrival is only REQUESTED from inside the pumped world (IO record, mount effect, scroll drive), raise --hold-after.`);
+        chrome.reap();
+        process.exit(6);
+      }
+      if (HOLD_GRACE > 0) await new Promise((r) => setTimeout(r, HOLD_GRACE));
+      console.log(`[pixel]   ${label}: --hold satisfied after ${done} pumped frame(s)${HOLD_GRACE ? ` (+${HOLD_GRACE}ms grace)` : ''}, resuming the absolute clock`);
+      held = true;
+    };
+    if (HOLD && HOLD_AFTER === 0) await holdNow(0);
     const total = frames || 60;
-    const chunk = Math.max(1, Math.ceil(total / 40));
+    // --chunk N: pump granularity. State alignment (--ready) resolves to ONE chunk —
+    // a marquee that starts 8–16 frames earlier on the single-bundle rebuild sits
+    // entirely inside the default 6-frame chunk, and the two sides can only be
+    // pinned to the same frame with a 1-frame chunk (darkroom /about 2.57 → 0.00).
+    const chunk = Number(flag('chunk', '0')) > 0 ? Number(flag('chunk', '0')) : Math.max(1, Math.ceil(total / 40));
     const gap = Math.max(20, Math.floor(SETTLE / Math.ceil(total / chunk)));
     let readyAt = null;
     for (let done = 0; done < total; done += chunk) {
+      if (!held && done >= HOLD_AFTER) await holdNow(done);
       await evalJs(`(window.__pump(${dt || 16.7}, ${Math.min(chunk, total - done)}), true)`);
       if (DRIVE) await evalJs(`(function(){ try { ${DRIVE} } catch (e) { return "ERR:" + e; } return true; })()`);
       if (READY && readyAt === null) {
         const r = await evalJs(READY);
         if (r === true || r === 'true') {
           readyAt = done + chunk;
-          console.log(`[pixel]   ${label}: ready after ${readyAt} pumped frame(s) — stopping early`);
+          console.log(`[pixel]   ${label}: ready after ${readyAt} pumped frame(s) — ${AFTER_READY ? `then +${AFTER_READY} frame(s) state-relative` : 'stopping early'}`);
           break;
         }
       }
       await new Promise((r) => setTimeout(r, gap));
+    }
+    if (READY && readyAt !== null && AFTER_READY > 0) {
+      for (let done = 0; done < AFTER_READY; done += chunk) {
+        await evalJs(`(window.__pump(${dt || 16.7}, ${Math.min(chunk, AFTER_READY - done)}), true)`);
+        if (DRIVE) await evalJs(`(function(){ try { ${DRIVE} } catch (e) { return "ERR:" + e; } return true; })()`);
+        await new Promise((r) => setTimeout(r, gap));
+      }
     }
 
     if (READY && readyAt === null) {

@@ -98,6 +98,17 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
   // v0.1.66: template-literal prefixes are not addresses.
   truthy("extract — ${ prefix rejected (v0.1.66)",
     !refs("`https://cdn.x.com/${pkg}/x.wasm`").some((u) => u.includes("$%7B") || u.includes("${")));
+  // v0.3.15 (raycastkbd): an image-optimiser PROXY has no extension and never
+  // will — `/_next/image?url=…&w=640` in a srcset, in imageSrcSet, or in a
+  // plain src. The page-vs-asset heuristic dropped all of them for eight
+  // versions (42 rungs in the HTML, 19 on disk, closure ∅). A page with a query
+  // string must still be a page.
+  const px = refs(`<link rel="preload" as="image" imageSrcSet="/_next/image?url=%2Fbg.webp&amp;w=640&amp;q=70 640w, /_next/image?url=%2Fbg.webp&amp;w=1080&amp;q=70 1080w">` +
+    `<img srcSet="/_next/image?url=%2Fkb.png&amp;w=828&amp;q=95 828w" src="/_next/image?url=%2Fkb.png&amp;w=1920&amp;q=95"><a href="/about?tab=2">x</a>`);
+  eq("extract — next/image srcset + imageSrcSet + src rungs are assets (v0.3.15)",
+    px.filter((u) => u.includes("/_next/image?")).length, 4);
+  truthy("extract — a page with a query string is still a page (v0.3.15)", !px.some((u) => u.includes("/about?")));
+  truthy("extract — the proxied source image is still extracted alongside (v0.3.15)", px.includes("https://x.com/bg.webp"));
   // v0.2.6 shape 6: document-relative attributes, with both guards.
   truthy("extract — ./relative attr resolved (v0.2.6)",
     refs(`<img src="./content/3.project/1.A/thumb.png">`, "https://x.com/index.html").includes("https://x.com/content/3.project/1.A/thumb.png"));
@@ -110,6 +121,46 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
   // isTextRefSource: declared type is the oracle; octet-stream means "unknown".
   truthy("textref — declared css wins", isTextRefSource({ url: "https://x.com/f", contentType: "text/css", head: Buffer.from("a{}") }));
   truthy("textref — png bytes not text", !isTextRefSource({ url: "https://x.com/i.png", contentType: "image/png", head: Buffer.from([0x89, 0x50, 0x4e, 0x47]) }));
+}
+
+// ---------------------------------------------- 4b. lib/negotiate fixtures
+{
+  // v0.3.9 / basement D5: `auto=format` negotiates on Accept; `accept: */*`
+  // landed 391 fallback-format variants (webp transcoded back to JPEG) while
+  // every gate stayed green. These pin the one-yardstick contract.
+  const { IMG_ACCEPT, imageAcceptFor, isNegotiated, sanityEvidence } =
+    await import(path.join(SKILL, "scripts/lib/negotiate.mjs"));
+  eq("negotiate — sanity image gets browser Accept (v0.3.9)",
+    imageAcceptFor("https://cdn.sanity.io/images/9syto90m/production/ab-1920x833.webp?auto=format&w=1200"), IMG_ACCEPT);
+  eq("negotiate — next/image proxy gets browser Accept (v0.3.9)",
+    imageAcceptFor("https://x.com/_next/image?url=https%3A%2F%2Fcdn.sanity.io%2Fimages%2Fp%2Fd%2Fa.jpg&w=1200&q=75"), IMG_ACCEPT);
+  eq("negotiate — CDP type hint outranks extensionless URL (v0.3.9)",
+    imageAcceptFor("https://cdn.x.com/asset/4711", "Image"), IMG_ACCEPT);
+  eq("negotiate — MIME-form hint also counts (14islands TSV carries image/png)",
+    imageAcceptFor("https://cdn.x.com/asset/4711", "image/png"), IMG_ACCEPT);
+  eq("negotiate — video MIME hint stays */*",
+    imageAcceptFor("https://cdn.x.com/asset/4711", "video/mp4"), "*/*");
+  eq("negotiate — non-image keeps */* (allergy rung untouched)",
+    imageAcceptFor("https://x.com/chunk.js"), "*/*");
+  truthy("negotiate — Vary: origin, accept detected (v0.3.9)", isNegotiated("origin, accept"));
+  truthy("negotiate — Vary without accept not flagged", !isNegotiated("origin, accept-encoding"));
+  // sanityEvidence: all three spellings normalize (plain / \/ escaped / %2F encoded)
+  const ev = sanityEvidence(
+    `src="https://cdn.sanity.io/images/9syto90m/production/a-1x1.jpg?auto=format"` +
+    ` {"u":"https:\\/\\/cdn.sanity.io\\/files\\/9syto90m\\/production\\/b.mp4"}` +
+    ` /_next/image?url=https%3A%2F%2Fcdn.sanity.io%2Fimages%2Fdiak0tmr%2Fproduction%2Fc-2x2.png` +
+    ` fetch("https://diak0tmr.apicdn.sanity.io/v2024-01-01/data/query/production?query=x")` +
+    ` {"_key":"abc","_key":"def"}`);
+  eq("negotiate — sanityEvidence projects across spellings (v0.3.9)",
+    ev.projects.map((p) => `${p.projectId}:${p.n}`).sort(), ["9syto90m:2", "diak0tmr:1"]);
+  eq("negotiate — sanityEvidence apicdn host seen", ev.apiHosts.map((h) => h.host), ["diak0tmr.apicdn.sanity.io"]);
+  eq("negotiate — sanityEvidence counts", [ev.autoFormat, ev.keyFields], [1, 2]);
+  // darkroom.engineering (v0.3.9): a flight :HC preconnect names the bare host
+  // with NO asset path — Sanity is in the stack while the page shows zero
+  // project refs. cdnRefs must catch it or the fingerprint prints "无".
+  const hc = sanityEvidence(`:HC\\"https:\\/\\/cdn.sanity.io\\"`);
+  truthy("negotiate — bare :HC preconnect counted, no fake project (v0.3.9)",
+    hc.cdnRefs === 1 && hc.projects.length === 0, JSON.stringify(hc));
 }
 
 // ------------------------------------- 5. verify-mirror end-to-end fixture
@@ -136,6 +187,22 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
     catch { return false; }
   };
   truthy("verify-mirror — consistent mini mirror passes", run());
+  // v0.3.9/darkroom: the DELIBERATE 404 template carries flight slot names
+  // (`"forbidden":"$undefined"`) and is the smallest HTML on a Next site —
+  // weak "refusal wording" must NOT fire on it; a strong WAF body there must.
+  const t404 = `<html><body>not found<script>self.__next_f.push("\\"notFound\\":\\"$undefined\\",\\"forbidden\\":\\"$undefined\\"")</script></body></html>`;
+  writeFileSync(path.join(M, "a.png"), img); // restore
+  writeFileSync(path.join(M, "404.html"), t404);
+  files["https://mini.test/__404probe"] = { path: "404.html", bytes: Buffer.byteLength(t404), sha256: sha(Buffer.from(t404)), type: "text/html (404 template)" };
+  writeFileSync(path.join(M, "mirror-manifest.json"), JSON.stringify({ origin: "https://mini.test", files }, null, 2));
+  writeFileSync(path.join(M, "inventory.tsv"), "SHA256\tBYTES\tPATH\tURL\n" + Object.entries(files).map(([u, r]) => [r.sha256, r.bytes, r.path, u].join("\t")).join("\n") + "\n");
+  truthy("verify-mirror — 404 template flight slot names not a weak interstitial (v0.3.9)", run());
+  const waf404 = `<html><body><h1>Attention Required! | Cloudflare</h1></body></html>`;
+  writeFileSync(path.join(M, "404.html"), waf404);
+  files["https://mini.test/__404probe"] = { path: "404.html", bytes: Buffer.byteLength(waf404), sha256: sha(Buffer.from(waf404)), type: "text/html (404 template)" };
+  writeFileSync(path.join(M, "mirror-manifest.json"), JSON.stringify({ origin: "https://mini.test", files }, null, 2));
+  writeFileSync(path.join(M, "inventory.tsv"), "SHA256\tBYTES\tPATH\tURL\n" + Object.entries(files).map(([u, r]) => [r.sha256, r.bytes, r.path, u].join("\t")).join("\n") + "\n");
+  truthy("verify-mirror — WAF body in the 404 template still reds (strong marker)", !run());
   writeFileSync(path.join(M, "a.png"), Buffer.concat([img, Buffer.from([9])]));
   truthy("verify-mirror — one corrupted byte goes red (v0.1.14)", !run());
 }
@@ -146,11 +213,12 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
   // prefixed, no terminator), an EMPTY-ID :HL row (the first walker broke its
   // chain here), an I row (module ref), and a row-0 router payload.
   const mkStream = (opts) => {
-    const { moduleId = 123, chunk = "abc12345", text = "hello", moduleId2 = null } = opts || {};
+    const { moduleId = 123, chunk = "abc12345", text = "hello", moduleId2 = null, cls = null, slot = null } = opts || {};
     const tHex = Buffer.byteLength(text).toString(16);
     const kids = [["$", "$L2", null, {}]];
     if (moduleId2 != null) kids.push(["$", "$L6", null, {}]); // second ref, same export name
-    kids.push(["$", "p", null, { children: "$3" }]);
+    kids.push(["$", "p", null, { ...(cls ? { className: cls } : {}), children: "$3" }]);
+    if (slot) kids.push(["$", "div", null, { loading: slot, children: "x" }]);
     const row0 = {
       P: null, b: "BUILDX", c: ["", ""], q: "", i: false,
       f: [[
@@ -225,6 +293,13 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
   // three files) — trees equal, bijection violated, gate must go red.
   writeFileSync(path.join(BUILT, "index.html"), wrap(mkStream({ moduleId: 456, chunk: "fedcba98", moduleId2: 789 })));
   truthy("verify-flight — one origin module split in two goes red (v0.3.2)", (() => { const g = gateOut(); return !g.ok && g.out.includes("123"); })());
+  // v0.3.12 / darkroom: Turbopack css-module hashes are not always 8 hex (a 7-hex
+  // next/font class with an underscore-led local segment read as "behavior"), and a
+  // LayoutRouter loading/notFound tuple keeps an EMPTY styles slot on the rebuild
+  // side after N5 stripped the mirror's — [tree] vs [tree, []] must be equal.
+  writeFileSync(path.join(MIR, "index.html"), wrap(mkStream({ cls: "mono_5da033d2-module__n1AzdG__variable", slot: [["$", "span", null, {}], []] })));
+  writeFileSync(path.join(BUILT, "index.html"), wrap(mkStream({ moduleId: 456, chunk: "fedcba98", cls: "mono_39c065e-module___Kbuzq__variable", slot: [["$", "span", null, {}]] })));
+  truthy("verify-flight — 7-hex css-module hash + empty loading styles slot normalize (v0.3.12)", gate());
 }
 
 // --------------- 5c. module graph: turbopack merged/async shapes (v0.3.3)
@@ -270,6 +345,218 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
   } catch (e) { bad("module graph — turbopack shapes", String(e.stderr || e.stdout || e.message).split("\n")[0]); }
 }
 
+// ------------------------------ 5a2. webpack push container + token gates (v0.3.10)
+{
+  // 14islands F1: a three.js-style export map with MORE `key: function` props
+  // than the container has modules used to be picked as the container. The
+  // webpackChunk push signature is positive evidence; the count is not.
+  const WP = path.join(TMP, "wp-chunk.js");
+  const bigMap = Array.from({ length: 12 }, (_, i) => `K${i}:function(){return ${i}}`).join(",");
+  writeFileSync(WP, `(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[2888],{\n` +
+    `  10:function(e,t,n){"use strict";n.d(t,{${bigMap}});var a=n(20);t.exports={a}},\n` +
+    `  20:function(e,t,n){"use strict";t.exports=1},\n` +
+    `  30:function(e,t,n){"use strict";var z=n(10)}\n` +
+    `}]);\n`);
+  const WPOUT = path.join(TMP, "wp-map.json");
+  try {
+    const out = execFileSync(process.execPath, [path.join(SKILL, "scripts/module-map.mjs"), "--in", WP, "--out", WPOUT], { stdio: "pipe" }).toString();
+    const mm = JSON.parse(readFileSync(WPOUT, "utf8"));
+    eq("module-map — webpackChunk push object is the container, not the bigger export map (v0.3.10)",
+      mm.modules.map((m) => String(m.id)).sort(), ["10", "20", "30"]);
+    truthy("module-map — push signature reported", /push signature/.test(out));
+  } catch (e) { bad("module-map — webpack push container", String(e.stderr || e.stdout || e.message).split("\n")[0]); }
+
+  // v0.3.11 / 14islands F12+F13: a SINGLE-factory push chunk is a container
+  // (it used to fall through the `< 2` threshold into the array reader, which
+  // counted a worker's `[function(){…}, …]` table as 31 modules), and a
+  // MINIFIED one-line chunk must not trip the overlap rule (F11: 652 correct
+  // modules all on line 1 — the invariant is characters, not lines).
+  const WP1 = path.join(TMP, "wp-single.js");
+  writeFileSync(WP1, `"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[7871],{87871:function(e,t,r){var q=[function(){return 1},function(){return 2},function(){return 3}];t.exports=q}}]);`);
+  const WP2 = path.join(TMP, "wp-minified.js");
+  writeFileSync(WP2, `(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[1],{10:function(e,t,n){t.exports=1},20:function(e,t,n){t.exports=n(10)},30:function(e,t,n){t.exports=n(20)}}]);`);
+  for (const [f, want, label] of [[WP1, ["87871"], "single-factory push chunk is 1 module, not the worker table (v0.3.11)"], [WP2, ["10", "20", "30"], "minified one-line chunk passes the char-overlap invariant (v0.3.11)"]]) {
+    const o = path.join(TMP, path.basename(f) + ".json");
+    try {
+      execFileSync(process.execPath, [path.join(SKILL, "scripts/module-map.mjs"), "--in", f, "--out", o], { stdio: "pipe" });
+      eq(`module-map — ${label}`, JSON.parse(readFileSync(o, "utf8")).modules.map((m) => String(m.id)).sort(), want);
+    } catch (e) { bad(`module-map — ${label}`, String(e.stderr || e.stdout || e.message).split("\n")[0]); }
+  }
+
+  // v0.3.12 / darkroom §F-1: with the React Compiler, Turbopack inlines the whole
+  // implementation inside e.s([name, 0, function(){…}], id). The reader used to
+  // skip the call body, losing every edge inside it.
+  const TS = path.join(TMP, "turbo-inline-export.js");
+  writeFileSync(TS, `(globalThis.TURBOPACK = globalThis.TURBOPACK || []).push([void 0,
+  111, e => {
+    "use strict";
+    var r = e.i(222);
+    e.s(["useX", 0, function(o, a) {
+      console.error("not an export name");
+      return e.A(777).then(() => e.i(888));
+    }], 111);
+  },
+  222, e => { e.s([["Bar", () => 2]], 222); },
+  777, e => { e.v(t => t(888)); },
+  888, e => {}
+]);\n`);
+  const TSO = path.join(TMP, "turbo-inline-export.json");
+  try {
+    execFileSync(process.execPath, [path.join(SKILL, "scripts/module-map.mjs"), "--in", TS, "--out", TSO], { stdio: "pipe" });
+    const mm = JSON.parse(readFileSync(TSO, "utf8"));
+    const m111 = mm.modules.find((m) => String(m.id) === "111");
+    truthy("module-map — edges inside an inlined e.s(…) export body are collected (v0.3.12)",
+      !!m111 && ["222", "777", "888"].every((x) => m111.requires.map(String).includes(x)), JSON.stringify(m111 && m111.requires));
+    eq("module-map — only element-start strings are export names (v0.3.12)", m111 && m111.exportNames, ["useX"]);
+    const m222 = mm.modules.find((m) => String(m.id) === "222");
+    eq("module-map — paired-form export names still read (v0.3.12)", m222 && m222.exportNames, ["Bar"]);
+  } catch (e) { bad("module-map — inlined export body", String(e.stderr || e.stdout || e.message).split("\n")[0]); }
+
+  // F4: token stream equality sees a nested-template content change that
+  // parses fine. Same code with different whitespace is EQUAL; a changed
+  // template literal is not.
+  const T0 = path.join(TMP, "tok-orig.js"), T1 = path.join(TMP, "tok-ws.js"), T2 = path.join(TMP, "tok-tpl.js");
+  writeFileSync(T0, "const f=(e,t)=>`${iW(e)}:${t};`;export{f};\n");
+  writeFileSync(T1, "const f = (e, t) => `${iW(e)}:${t};`;\nexport { f };\n");
+  writeFileSync(T2, "const f = (e, t) => `$ {\n  iW(e)\n}: $ {\n  t\n};`;\nexport { f };\n");
+  const vt = (a, b) => { try { execFileSync(process.execPath, [path.join(SKILL, "scripts/verify-tokens.mjs"), a, b], { stdio: "pipe" }); return true; } catch { return false; } };
+  truthy("verify-tokens — whitespace-only reformat is token-identical (v0.3.10)", vt(T0, T1));
+  truthy("verify-tokens — beautifier-style template mangling goes red (v0.3.10)", !vt(T0, T2));
+
+  // F3: emit-webpack-chunk re-emits a pretty webpack chunk part-by-part and
+  // its reassembly gate must be byte-exact; consumes module-map's field names.
+  const PRETTY = path.join(TMP, "wp-pretty.js");
+  writeFileSync(PRETTY, `(self.webpackChunk_N_E = self.webpackChunk_N_E || []).push([[2888], {\n` +
+    `    10: function(e, t, n) {\n        "use strict";\n        t.exports = 1\n    },\n` +
+    `    20: function(e, t, n) {\n        "use strict";\n        var z = n(10)\n    }\n}]);\n`);
+  const PMAP = path.join(TMP, "wp-pretty-map.json"), GEN = path.join(TMP, "wp-gen.js"), PARTS = path.join(TMP, "wp-parts");
+  try {
+    execFileSync(process.execPath, [path.join(SKILL, "scripts/module-map.mjs"), "--in", PRETTY, "--out", PMAP], { stdio: "pipe" });
+    execFileSync(process.execPath, [path.join(SKILL, "scripts/emit-webpack-chunk.mjs"), "--in", PRETTY, "--map", PMAP, "--out", GEN, "--parts", PARTS], { stdio: "pipe" });
+    truthy("emit-webpack-chunk — parts reassemble byte-exact to the pretty chunk (v0.3.10)", readFileSync(GEN, "utf8") === readFileSync(PRETTY, "utf8"));
+    execFileSync(process.execPath, [path.join(SKILL, "scripts/emit-webpack-chunk.mjs"), "--in", PRETTY, "--map", PMAP, "--out", GEN, "--parts", PARTS, "--check"], { stdio: "pipe" });
+    ok("emit-webpack-chunk — --check passes on untouched parts");
+  } catch (e) { bad("emit-webpack-chunk", String(e.stderr || e.stdout || e.message).split("\n")[0]); }
+
+  // F2: verify-nextdata reads a pages-router mirror DIRECTORY (offline) and
+  // compares __NEXT_DATA__ with _next/data; a changed prop goes red.
+  const ND = path.join(TMP, "nd-a"), NDB = path.join(TMP, "nd-b");
+  const nd = (dir, title) => {
+    mkdirSync(path.join(dir, "_next/data/BUILD1"), { recursive: true });
+    const props = { pageProps: { title, items: [{ _key: "k1", v: 1 }] }, __N_SSG: true };
+    writeFileSync(path.join(dir, "index.html"), `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props, page: "/", query: {}, buildId: "BUILD1" })}</script></html>`);
+    writeFileSync(path.join(dir, "_next/data/BUILD1/index.json"), JSON.stringify(props));
+  };
+  nd(ND, "hello"); nd(NDB, "hello");
+  const vn = (a, b) => { try { execFileSync(process.execPath, [path.join(SKILL, "scripts/verify-nextdata.mjs"), "--a", a, ...(b ? ["--b", b] : []), "--routes", "/"], { stdio: "pipe" }); return true; } catch { return false; } };
+  truthy("verify-nextdata — single side: __NEXT_DATA__ agrees with _next/data (v0.3.10)", vn(ND));
+  truthy("verify-nextdata — two identical sides pass", vn(ND, NDB));
+  nd(NDB, "changed");
+  truthy("verify-nextdata — a changed pageProp goes red", !vn(ND, NDB));
+}
+
+// ------------------------------ 5a3. make-standalone refuses to run blind (v0.3.11)
+{
+  // 14islands F15: `--shell` defaulted to "site", so a usage probe EXECUTED the
+  // defaults and copied a 1.27 GB mirror into src/public/. No --shell → usage,
+  // exit 2, nothing written.
+  const D = path.join(TMP, "standalone-blind");
+  mkdirSync(D, { recursive: true });
+  let code = 0;
+  try { execFileSync(process.execPath, [path.join(SKILL, "tools/make-standalone.mjs")], { cwd: D, stdio: "pipe" }); }
+  catch (e) { code = e.status; }
+  truthy("make-standalone — no --shell exits 2 without writing (v0.3.11)", code === 2 && readdirSync(D).length === 0, `exit ${code}, wrote ${readdirSync(D).join(",")}`);
+}
+
+// ----------------------------------------- 5b. off-host census contract (v0.3.4)
+// extract-refs reports off-list hosts as onOffHost(host, href) — a BARE host.
+// wayback-mirror consumed it as a URL: new URL("fonts.googleapis.com") throws,
+// the catch {} swallowed every call, and the census printed nothing for a page
+// that references Google Fonts and a Vimeo player. This pins the contract the
+// way the fixed consumer uses it: first arg counts as a host, no URL parse.
+{
+  const { createRefExtractor } = await import(path.join(SKILL, "scripts/lib/extract-refs.mjs"));
+  const census = new Map();
+  const extract = createRefExtractor({
+    origin: "http://x.com", originHost: "x.com", assetHosts: new Set(["x.com"]),
+    onOffHost: (host) => census.set(host, (census.get(host) || 0) + 1),
+  });
+  [...extract('<link href="http://fonts.googleapis.com/css?family=F"><iframe src="//player.vimeo.com/video/1"></iframe>', "http://x.com/")];
+  truthy("extract-refs — onOffHost hands a bare host and the census counts it (v0.3.4)",
+    census.get("fonts.googleapis.com") === 1 && census.get("player.vimeo.com") === 1,
+    `census=${JSON.stringify([...census])}`);
+}
+
+// ---------------------------------- 5c. standalone gate: comments are prose (v0.3.4)
+// A Compass/SASS build stamps `/* line N, ../../x.scss */` provenance comments
+// into its CSS output — content bytes a rebuild must not edit. The gate's
+// comment-skip regex missed lines OPENING a block comment, so a 2013 target
+// produced 5 false positives; meanwhile a real escaping import must still red.
+{
+  const FX = path.join(TMP, "standalone-fx");
+  mkdirSync(path.join(FX, "css"), { recursive: true });
+  writeFileSync(path.join(FX, "package.json"), JSON.stringify({ name: "fx", private: true }));
+  writeFileSync(path.join(FX, "css", "screen.css"), "/* line 17, ../../../../Applications/Fire.app/lib/compass/_utilities.scss */\nbody { color: red; }\n");
+  writeFileSync(path.join(FX, "app.mjs"), 'import x from "../outside-the-tree.js";\n');
+  let out = "";
+  try { out = execFileSync(process.execPath, [path.join(SKILL, "scripts/verify-standalone.mjs"), "--src", FX], { cwd: SKILL, stdio: "pipe" }).toString(); }
+  catch (e) { out = String(e.stdout || ""); }
+  truthy("verify-standalone — block-comment prose is not an escape (v0.3.4)", !out.includes("screen.css"), "flagged the Compass comment");
+  truthy("verify-standalone — a real ../ import outside src still reds (v0.3.4)", out.includes("app.mjs") && /FAIL/.test(out), "missed the real escape");
+}
+
+// ------------------- 5d. cold-audit-decls: flat-bundle roll-call (v0.3.14, samsyninja)
+// A scope-hoisted bundle has no module containers, so the M(n) roll-call unit is the
+// depth-0 declaration. The samsyninja M11.1 review did this by hand for one region and
+// nobody could rerun it. Fixture pins: (a) depth-0 class/function/const-chain/
+// destructuring bindings are collected, nested ones are not; (b) a citation range in a
+// port comment covers a declaration (incl. --slack 1 off-by-one); (c) an uncited one is
+// UNKNOWN and exits 1; (d) overrides bucket it and exit 0; (e) an override naming a
+// declaration the scan cannot find is FATAL (exit 2); (f) a `match` range override
+// touches only the lines it matches.
+{
+  const FX = path.join(TMP, "cold-decls");
+  mkdirSync(path.join(FX, "port"), { recursive: true });
+  const pretty = [
+    "class Foo {",                       // L1
+    "    constructor() { const inner = 1; }",
+    "}",
+    "function bar(x) {",                 // L4
+    "    function nested() {}",
+    "    return x;",
+    "}",
+    "const a = 1,",                      // L8 a
+    "    b = {",                         // L9 b
+    "        cls: 1",
+    "    },",
+    "    { c, d: e } = bar(a);",         // L12 c, e
+    "var q = 2;",                        // L13 q
+    "const hoisted = {",                 // L14 hoisted (match-able)
+    "    class: \"x\"",
+    "};",
+    "",
+  ].join("\n");
+  writeFileSync(path.join(FX, "pretty.js"), pretty);
+  writeFileSync(path.join(FX, "port", "foo.js"), "// Port of Foo + bar (pretty L1-L7)\nexport class Foo {}\n// b lives here (pretty L9), so does q — L12 covers c/e via slack\nexport const b = {};\n");
+  const run = (extra) => {
+    try { return { code: 0, out: execFileSync(process.execPath, [path.join(SKILL, "scripts/cold-audit-decls.mjs"), "--pretty", path.join(FX, "pretty.js"), "--ranges", "1-20", "--port", path.join(FX, "port"), ...extra], { cwd: SKILL, stdio: "pipe" }).toString() }; }
+    catch (e) { return { code: e.status, out: String(e.stdout || "") + String(e.stderr || "") }; }
+  };
+  const r1 = run([]);
+  truthy("cold-audit-decls — depth-0 roll-call finds Foo/bar/a/b/c/e/q/hoisted, not inner/nested", /examined 8\/8/.test(r1.out) && !/inner|nested/.test(r1.out), r1.out.split("\n").slice(0, 4).join(" | "));
+  truthy("cold-audit-decls — cited ranges + slack cover Foo/bar/a/b/q/c/e; uncited `hoisted` is UNKNOWN → exit 1", r1.code === 1 && /UNKNOWN \(1\)/.test(r1.out) && /hoisted/.test(r1.out) && /cited 7/.test(r1.out), `exit ${r1.code}: ${r1.out.split("\n").find((l) => /cited/.test(l))}`);
+  writeFileSync(path.join(FX, "ov.json"), JSON.stringify({ ranges: [{ from: 1, to: 20, bucket: "collapsed", match: "= \\{\\s*\\n\\s*class:", reason: "compiler-hoisted literal" }] }));
+  const r2 = run(["--overrides", path.join(FX, "ov.json")]);
+  truthy("cold-audit-decls — a `match` range override buckets only the matching line → PASS exit 0", r2.code === 0 && /collapsed 1/.test(r2.out) && /cited 7/.test(r2.out), `exit ${r2.code}`);
+  writeFileSync(path.join(FX, "bad.json"), JSON.stringify({ decls: [{ name: "ghost", line: 99, bucket: "omitted", reason: "typo" }] }));
+  const r3 = run(["--overrides", path.join(FX, "bad.json")]);
+  truthy("cold-audit-decls — an override naming an unfound declaration is FATAL (exit 2), not silently inert", r3.code === 2 && /cannot find/.test(r3.out), `exit ${r3.code}`);
+  const r4 = run(["--slack", "0"]);
+  // strict: a (L8) and hoisted (L14) lose their neighbours' citations; q (L13) survives only as a
+  // short-name marker ("so does q" on a line that carries L12) — named, not cited, listed for a human
+  truthy("cold-audit-decls — --slack 0 reads ranges strictly: a/hoisted UNKNOWN, q demoted to named-only", r4.code === 1 && /UNKNOWN \(2\)/.test(r4.out) && /named-only 1/.test(r4.out) && /cited 5/.test(r4.out), r4.out.split("\n").find((l) => /cited/.test(l)));
+}
+
 // -------------------------------------------------------- 6. doc integrity
 {
   let dangling = 0;
@@ -280,6 +567,89 @@ const truthy = (name, v, why = "") => (v ? ok(name) : bad(name, why));
     if (!existsSync(path.join(SKILL, "scripts", f[1])) && f[1] !== "verify-decls.mjs") { dangling++; bad(`doc script ref ${f[1]}`, "named by SKILL.md but missing"); }
   }
   if (!dangling) ok("docs — SKILL.md references resolve (verify-decls exempt by design)");
+}
+
+// ------------------------------- v0.3.15 (raycastkbd): the container is not the whole file
+// A Turbopack chunk carries bytes OUTSIDE the container (Sentry _debugIds
+// prologue, //# debugId epilogue). slice-modules must carry both verbatim so
+// the re-emitted chunk is token-identical to the original — verify-tokens was
+// 0/54 red on a port whose every module was exact.
+{
+  const PRO = `;!function(){try{var e="undefined"!=typeof globalThis?globalThis:{},n=(new e.Error).stack;n&&((e._debugIds||(e._debugIds={}))[n]="79f61c53-98ea-5a97-2aab-08075fc42529")}catch(e){}}();\n`;
+  const CON = `(globalThis.TURBOPACK || (globalThis.TURBOPACK = [])).push([\n    "object" == typeof document ? document.currentScript : void 0,\n` +
+    `    618507, e => {\n        "use strict";\n        var t = e.i(271645);\n        e.s(["ActionIcon", 0, function() { return t.x }])\n    }\n]);\n`;
+  const EPI = `//# debugId=79f61c53-98ea-5a97-2aab-08075fc42529\n`;
+  const TP = path.join(TMP, "tp-pretty.js"), TPM = path.join(TMP, "tp-map.json"), TPC = path.join(TMP, "tp-closure.json"), TPG = path.join(TMP, "tp-gen.js");
+  writeFileSync(TP, PRO + CON + EPI);
+  const run = (args) => execFileSync(process.execPath, args, { stdio: "pipe" });
+  try {
+    run([path.join(SKILL, "scripts/module-map.mjs"), "--in", TP, "--out", TPM]);
+    const map = JSON.parse(readFileSync(TPM, "utf8"));
+    writeFileSync(TPC, JSON.stringify({ seed: "ALL", modules: map.modules.map((m) => m.id) }));
+    run([path.join(SKILL, "scripts/slice-modules.mjs"), "--in", TP, "--map", TPM, "--closure", TPC, "--out", TPG]);
+    const gen = readFileSync(TPG, "utf8");
+    truthy("slice-modules — Turbopack prologue carried verbatim (v0.3.15)", gen.includes(PRO.trim()));
+    truthy("slice-modules — Turbopack epilogue carried verbatim (v0.3.15)", gen.trimEnd().endsWith(EPI.trim()));
+    truthy("slice-modules — header names the full regenerate command (v0.3.15)", /Regenerate:\s+node scripts\/slice-modules\.mjs --in .* --map .* --closure .* --out /.test(gen));
+    let tok = true; try { run([path.join(SKILL, "scripts/verify-tokens.mjs"), TP, TPG]); } catch { tok = false; }
+    truthy("slice-modules — re-emitted chunk is token-identical to the original incl. prologue (v0.3.15)", tok);
+    run([path.join(SKILL, "scripts/slice-modules.mjs"), "--in", TP, "--map", TPM, "--closure", TPC, "--out", TPG, "--check"]);
+    ok("slice-modules — --check passes on the fresh slice (v0.3.15)");
+  } catch (e) { bad("slice-modules prologue/epilogue", String(e.stderr || e.stdout || e.message).split("\n").slice(-3).join(" | ")); }
+}
+
+// ------------------------------- v0.3.15 (raycastkbd): cold-audit examines Turbopack's classic one-parameter factory
+// A loader-stub family's entry chunk registers the stub's target as
+// `function(C) { C.n(C.i(850471)) }` — not an arrow, not three parameters. It fell
+// through both signature shapes and the audit reported "examined only 2 of 3".
+{
+  const TP2 = path.join(TMP, "tp2-pretty.js"), TP2M = path.join(TMP, "tp2-map.json"), TP2C = path.join(TMP, "tp2-closure.json");
+  writeFileSync(TP2, `(globalThis.TURBOPACK || (globalThis.TURBOPACK = [])).push([\n    "object" == typeof document ? document.currentScript : void 0,\n` +
+    `    850471, C => {\n        "use strict";\n        C.s(["default", 0, function() { return 1 }])\n    },\n` +
+    `    345458, function(C) {\n        C.n(C.i(850471))\n    }\n]);\n`);
+  try {
+    execFileSync(process.execPath, [path.join(SKILL, "scripts/module-map.mjs"), "--in", TP2, "--out", TP2M], { stdio: "pipe" });
+    const map = JSON.parse(readFileSync(TP2M, "utf8"));
+    writeFileSync(TP2C, JSON.stringify({ seed: "ALL", modules: map.modules.map((m) => m.id) }));
+    const out = execFileSync(process.execPath, [path.join(SKILL, "scripts/cold-audit-modules.mjs"), "--map", TP2M, "--closure", TP2C], { stdio: "pipe" }).toString();
+    truthy("cold-audit — Turbopack classic one-parameter factory is examined (v0.3.15)", /\(2\/2 module\(s\) examined\)/.test(out), out.split("\n").filter((l) => /examined/.test(l)).join(" | "));
+  } catch (e) { bad("cold-audit one-parameter factory", String(e.stdout || e.stderr || e.message).split("\n").filter((l) => /FAIL|examined/.test(l)).join(" | ")); }
+}
+
+// ------------------------------- v0.3.15 (raycastkbd): serve — fallback CHAIN and a DSN stays a DSN
+// Spawns serve.mjs on loopback (explicit --port, no browser). Three roots:
+// site/ (top) → negotiated → mirror; the file only the last root holds must be
+// served. And a stub telemetry host's DSN (userinfo URL) must be rewritten to
+// a parseable same-origin DSN, not to a bare path — "Invalid Sentry Dsn" was a
+// CLEAN-gate red on both sides of a byte-exact port.
+{
+  const { spawn } = await import("node:child_process");
+  const R1 = path.join(TMP, "sv-site"), R2 = path.join(TMP, "sv-neg"), R3 = path.join(TMP, "sv-mirror");
+  for (const r of [R1, R2, R3]) mkdirSync(path.join(r, "_next/static/immutable/chunks"), { recursive: true });
+  writeFileSync(path.join(R3, "mirror-manifest.json"), JSON.stringify({ origin: "https://x.com", files: {} }));
+  writeFileSync(path.join(R2, "only-in-neg.webp"), "RIFF");
+  writeFileSync(path.join(R3, "only-in-mirror.txt"), "deep");
+  writeFileSync(path.join(R3, "_next/static/immutable/chunks/app.js"),
+    `init({dsn:"https://abc123@o379433.ingest.us.sentry.io/6624334"});x="https:\\/\\/abc123@o379433.ingest.us.sentry.io\\/6624334";`);
+  const PORT = 29997;
+  const sv = spawn(process.execPath, [path.join(SKILL, "scripts/serve.mjs"), "--root", R1, "--fallback-root", `${R2},${R3}`, "--port", String(PORT),
+    "--stub-ext-hosts", "o379433.ingest.us.sentry.io"], { stdio: "pipe" });
+  const get = async (p) => { const r = await fetch(`http://127.0.0.1:${PORT}${p}`); return { status: r.status, text: await r.text() }; };
+  let up = false;
+  for (let i = 0; i < 40 && !up; i++) { try { await fetch(`http://127.0.0.1:${PORT}/__wrs/identity`); up = true; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  try {
+    if (!up) throw new Error(`serve.mjs did not come up on ${PORT}`);
+    eq("serve — --fallback-root chain: second fallback answers (v0.3.15)", (await get("/only-in-mirror.txt")).status, 200);
+    eq("serve — --fallback-root chain: first fallback answers (v0.3.15)", (await get("/only-in-neg.webp")).status, 200);
+    const js = (await get("/_next/static/immutable/chunks/app.js")).text;
+    truthy("serve — stub host DSN stays parseable, same-origin (v0.3.15)",
+      js.includes(`dsn:"http://abc123@127.0.0.1:${PORT}/ext/o379433.ingest.us.sentry.io/6624334"`), js.slice(0, 160));
+    truthy("serve — escaped-slash DSN spelling handled too (v0.3.15)",
+      js.includes(`http:\\/\\/abc123@127.0.0.1:${PORT}\\/ext\\/o379433.ingest.us.sentry.io\\/6624334`));
+    truthy("serve — no userinfo URL to the stub host survives (v0.3.15)", !/@o379433\.ingest\.us\.sentry\.io/.test(js));
+    eq("serve — stub host path answers 200 (envelope endpoint) (v0.3.15)", (await get("/ext/o379433.ingest.us.sentry.io/api/6624334/envelope/")).status, 200);
+  } catch (e) { bad("serve chain/DSN", String(e.message).split("\n")[0]); }
+  finally { sv.kill("SIGTERM"); await new Promise((r) => sv.once("exit", r)); }
 }
 
 // ---------------------------------------------------------------- summary

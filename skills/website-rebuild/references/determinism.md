@@ -198,6 +198,12 @@ mulberry32(42) 替换 `Math.random`，双侧同流——随机序列相同则洗
 ### 2.6 媒体层补丁
 `play()` 假成功、`paused` 谎报 false——视频停在 seek 帧，同时防止站点的"卡死检测循环"发现视频没在播而进入异常分支（"自己失明"）【kimi】。seek 后必须重新驱帧再截图【noomo】。
 
+
+⭐ **实测形态（samsy，WebGPU 视频墙）**：视频不走 JS 时钟，冻结页里它照播；且作品墙的 `<video>` 是 `document.createElement` 出来**不挂 DOM** 的，`querySelectorAll('video')` 找不到。做法：在 shim 之后 hook `Document.prototype.createElement` 记下每个 video；每次截图前 `pause()` + `currentTime = 0`、等齐 `seeked`（用 shim 暴露的 `__nativeSetTimeout` 兜底超时，页面的 `setTimeout` 已被泵接管）、再泵 2 帧让 VideoTexture 采到第 0 帧。works 视图跨侧 3.94 → 1.5–1.9，第一大残差就此消失。
+
+⛔ **多人房间不是任一侧的属性，而 `Network.setBlockedURLs` 挡不住 WebSocket 握手**：屏蔽了 `*partykit.dev*`，镜像侧 HUD 照样 "Connected: 2"——别人的替身进了参照帧。对握手生效的是 DNS 层：Chrome 启动旗标 `--host-resolver-rules=MAP <host> 127.0.0.1`，两侧同加，登记为仪器条件（§2.8 同等隐藏）。
+
+⭐ **活世界的带宽来自它自己的骰子，reseed 是归类实验不是调参**：NPC 随机游走、粒子 spawn、CRT 屏的随机内容全走 `Math.random`——shim 把它定种了，但两侧在到达同一状态前消耗的次数不同（three 双拷贝 / vendored 库各消耗一串），于是跨侧残差成片（samsy 战役 1：home 34 格、about 61 格）。在每个视图截图前两侧同时 `__reseed(n)`，残差格 34→1、61→1——这证明它们是**骰子相位**不是移植差异；而同侧自比带宽照旧（活世界的骰子在截图前已经掷过了），门的容差就是这个带宽 + 常数，不许因为看见了残差再去动。
 ### 2.7 重光栅归一化
 display 抖动强制重绘，清掉合成层缓存的历史次像素光栅——带 transform 过渡的层会在合成器里留下与过渡路径相关的光栅残迹，导致同终态不同字节【kimi】。
 
@@ -418,3 +424,41 @@ shopify.design 上，出厂 shim 冻的三样（rAF + `setTimeout` + visibility�
 - 确定性自检记录：单侧两次哈希相等 + 同会话位姿哈希互异
 - 无头启动参数清单（旗标、视口、预种脚本）写进门脚本，环境变量参数化
 - 对拍产物成对入库（见 `references/verification-gates.md` §8）
+
+## 6. ⛔ 像素门两侧必须同经 serve.mjs【darkroom】
+
+`serve.mjs` 只对**自己伺服**的 HTML 注入 probe-shim(`?__probe` 冻结时钟)。重建侧若直接跑
+`next start`,它那一侧不冻结——镜像帧 BLANK、重建帧有画,自比带宽不可比,跨侧差异全是
+"冻结不对称"制造的。解法:`tools/assemble-static.mjs` 把 `next build` 的 `.next/server/app/**.html`
+摊成 `<route>/index.html`、`_next/static` 与 `public/*` 软链进去,用 `serve --side rebuild`
+伺服——两侧同一份 shim、同一个 t(darkroom:自比带宽全 0,home/contact/developers/privacy 0.00)。
+⚠ 只供对拍;`?_rsc=` 软导航载荷不在静态树,sweep 仍跑 `next start` 拓扑。
+
+## 7. ⭐ 状态对齐协议：先对齐状态，再等时推进（`--ready` + `--after-ready N` + `--chunk N`）【darkroom】
+
+等"绝对泵数"（两侧都泵到第 240 帧）与等"状态相对时间"（两侧各自 READY 之后再泵 N 帧）差一个
+**挂载相位**：单包重建的走马灯比镜像早 8–16 帧启动、`/work` 场景挂载相位不同——`/work` 在
+180/210 泵差 1.8–2.5，在 60/90/120/240 泵为 0，周期性出现，这是相位噪声不是移植缺口。
+⛔ 而对齐的**分辨率 = 泵分块帧数**（默认 total/40 ≈ 6 帧）：8–16 帧的相位差整个落在一个分块里，
+钉不到同一帧。协议：`--ready <表达式>` 定义状态、`--chunk 1` 把分辨率提到 1 帧、`--after-ready N`
+在两侧 READY 为真的那一帧之后各泵 N 帧再截图——/about、/work 两处 UNCLASSIFIED 残差由此归零
+（0.00@+120/+240、0.00@+135/+165/+210）。⚠ `--self` 自比带宽要在同一协议下重建。
+
+
+### 7.1 ⛔ 状态分两种：泵到的，和等到的——各自的协议不同【raycastkbd】
+
+§7 的 `--ready` + `--after-ready` 对齐的是**由泵抵达**的状态（挂载相位，虚拟时间里的事件）。
+另一种状态**由真实时间抵达**：GLB 在 worker 里解码、纹理到达、字体解析——泵再多帧也快不了它。
+raycastkbd 的 25% 检查点两边都撞过：
+
+| 协议 | 自比带宽（walk-025） | 发生了什么 |
+|---|---|---|
+| 绝对泵 120 帧（无对齐） | 0 / **2.91** 各约 2/3、1/3 | 一帧场景到了、一帧没到——到达是真实时间事件 |
+| `--ready 到达 --after-ready 120`（状态相对） | **恒 1.7** | 两侧 READY 时的绝对泵数不同 → 轴体爆炸动画（虚拟时钟驱动）相位不同：一帧展开、一帧合拢 |
+| `--hold 到达`（泵前）| 60s 超时 5/5 | 请求本身要从泵的世界里发出（IO 记录、滚动驱动到该节）——钟钉在 0 时页面根本没开口要 |
+| `--hold 到达 --hold-after 30 --hold-grace 500` | **2.91** | 到达 ≠ 解码完成：worker 解码与挂载在 500ms 里没做完 |
+| `--hold 到达 --hold-after 30 --hold-grace 1500` + 绝对泵 120 | **0.01** | 先泵 30 帧让页面发出请求，真实时间等到达 + 1.5s，再两侧同样绝对泵完 |
+
+规则：**到达用 `--hold`（真实时间，`--hold-after N` 让页面先开口要），相位用 `--ready/--after-ready`（虚拟时间，泵之中）**；
+一个页面可能两者都要。⛔ **hold 的谓词要按名点名**：`≥5 条匹配 glb|hdr|wasm 的资源条目` 在 switch.glb 还没被请求时就被别的条目凑满了，复刻侧 1/3 概率拍到空轴体（2.91）；改成五个文件名逐一 `some(includes)` 后逐次 0.01。`--hold-grace` 是对"解码完成没有页面可见信号"的让步——它是 §2.2
+"settle 必须是页面状态"的一条登记偏差，写进 §6，不许藏在默认值里。
