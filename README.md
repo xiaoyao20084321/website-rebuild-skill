@@ -37,7 +37,7 @@
 - **行号可溯源的逆向**——复刻里的每一行都能指回源站 bundle 的哪一行；bug 与怪写法照抄不修
 - **量化验收**——控制台 / 网络 / DOM / 几何 / **逐像素**五层自动比对，差异要么修掉、要么登记，不许糊过去
 - **源码化交付**——逐字移植的产物重写成人能读的工程（拆模块、按证据命名、补溯源头注），**复制到任何地方断网可跑**
-- **零依赖工具链**——70 个 Node 脚本（51 个工序脚本与验收门 + 9 个共用库 + 10 个源码化/反推重构器），源码化之前整条流水线不装任何 npm 包
+- **零依赖工具链**——75 个 Node 脚本（51 个工序脚本与验收门 + 14 个共用库 + 10 个源码化/反推重构器），源码化之前整条流水线不装任何 npm 包
 - **死站也能救**——Wayback 存档抢救：锚点+时间窗选一个连贯时刻、原始字节落成标准镜像、永久洞如实登记；五次死站抢救实测（四个复活、其一走完 L3；一个画面层确证全失,失败形态入册）
 - **连 RSC 站也能重构**——服务端组件源不下发（React Server Components / Next.js App Router），但它的完整输出（flight 流）内联在每页 HTML 里就是规格书：从中重构一个可构建的 Next 工程，用 flight 语义门收口。实测一个 Next 16/Turbopack 博客站 18/18 路由语义一致，一个 144 路由重站 PASS 144/144；盲逆向对公开源码判卷，结构 ≈95%、行为 ≈98%
 - **法务决定权归用户**——skill 只取证与呈交，产出默认私有 + noindex + 不部署
@@ -227,7 +227,8 @@ cp -R skills/website-rebuild ~/.claude/skills/website-rebuild
 ```
 skills/website-rebuild/    # 技能本体，目录结构遵循 agentskills.io 规范
 ├── SKILL.md               #   主流程 + 判级 + 纪律（激活时整体加载）
-├── references/            #   20 份分场景指南（按需加载）
+├── references/            #   23 份分场景指南（按需加载）
+│   └── case-studies/      #     各文档的实证记录（战史），不在必经集合
 ├── assets/templates/      #   文档模板
 ├── scripts/               #   零依赖 Node 工序脚本与验收门 + lib/ 共用模块
 │                          #     判级与源码化之前的全部工序都住这里
@@ -260,7 +261,7 @@ README.en.md               # 英文版 README
 
 版本随真实复刻项目递进：每个版本发布的功能与修复，都先在至少一个完整项目上验证过。
 
-完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.15**：到达与相位是两种状态——raycastkbd（v0.1.69 时代的 L3）按 v0.3.14 复审：移植本体全绿，但镜像门在"闭包 = ∅"底下有三处失明（`/_next/image?url=` 阶梯被当页面丢弃、Turbopack loader-stub 家族 13 个文件从未请求、路由预取载荷带进 51 MB 未登记外联）；同日补齐并落地八条工具级回哺：extract-refs 认 srcset/代理为资产、slice-modules 逐字带走容器外的 Sentry 前奏（token 门 0/54 → 61/61）、serve 回落链 + 桩主机 DSN 保持是 DSN、`pixelcompare --hold/--hold-after/--hold-grace`（GLB 在 worker 里解码是等到的状态，不是泵到的）、cold-audit 认单参工厂、make-standalone 链；selftest 71→86。
+完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.19**：战史外置——24 份文档各拆成「规则」与「实证」两半，故事逐字搬进 `references/case-studies/`（不在必经集合，只在追问「这条规则为什么存在」时读），规则原处留指针、【代号】不丢；零丢失由 `check-cases.mjs` 逐句比对证明（6,800+ 句全部 missing 0，过程中救回两次子代理中途失败造成的缺口）；必经集合 12.6–17.8 万 → 11.3–15.9 万 token；selftest 140→143（案例文件的三条不变量：有母文档、标题对得上、指针不指向空处）。
 
 ## 贡献
 

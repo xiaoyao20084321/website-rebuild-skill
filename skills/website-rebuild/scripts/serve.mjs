@@ -6,6 +6,7 @@
 //   node serve.mjs --side rebuild --root dist            # the rebuild
 //   node serve.mjs --side mirror --root mirror [--ext-hosts cdn.x.com,fonts.gstatic.com]
 //                  [--stub-ext-hosts telemetry.example.com] [--origin-host example.com] [--port N]
+//                  [--host 127.0.0.1] [--fallback-root dir,dir] [--query-ignore v,cb | --query-only w,h] [--rewrite FROM::TO]...
 //   PORT=3200 SERVE_ROOT=mirror node serve.mjs    # explicit port still wins
 //
 // PORTS AND IDENTITY (scripts/lib/ports.mjs — read its header once):
@@ -78,27 +79,28 @@ import {
 // ?width=N with one arbitrary variant: the page renders, so the zero-404 gate
 // goes green while the server hands out the wrong bytes. See lib/urlpath.mjs.
 import { serveCandidates, loadPolicy, policyFromArgs, describePolicy } from "./lib/urlpath.mjs";
+// The ledgers this server replays (recorded types, redirects) are read by the
+// module that writes them — lib/ledger.mjs.
+import { readManifest, readRedirects, REDIRECTS_FILE } from "./lib/ledger.mjs";
+import { sha256 } from "./lib/hash.mjs";
+import { cli } from "./lib/cli.mjs";
 
-const args = process.argv.slice(2);
 // Every --flag this script understands. An UNKNOWN flag is a loud failure, not
 // a shrug: a flag that is silently ignored looks exactly like one that worked.
 // Field case — `--fallback-root` was passed to a build of this script that did
 // not have it yet; it started single-rooted without a word and every asset
 // 404'd (121 problems on the first probe). A degradation nobody was told about
-// is worse than a crash.
-const KNOWN_FLAGS = new Set([
-  "host", "port", "root", "fallback-root", "side", "origin-host", "ext-hosts",
-  "stub-ext-hosts", "query-ignore", "query-only", "redirects", "cdp-port", "rewrite",
-]);
-{
-  const unknown = args.filter((a) => a.startsWith("--") && !KNOWN_FLAGS.has(a.slice(2)));
-  if (unknown.length) {
-    console.error(`FATAL: unknown flag(s): ${unknown.join(" ")}`);
-    console.error(`       known: ${[...KNOWN_FLAGS].map((f) => "--" + f).join(" ")}`);
-    console.error(`       A silently ignored flag is a silent downgrade — refusing to start.`);
-    process.exit(2);
-  }
-}
+// is worse than a crash. The check itself (and --help) lives in lib/cli.mjs,
+// the one argv contract every script shares.
+cli({
+  known: [
+    "host", "port", "root", "fallback-root", "side", "origin-host", "ext-hosts",
+    "stub-ext-hosts", "query-ignore", "query-only", "rewrite",
+  ],
+  file: import.meta.url,
+});
+
+const args = process.argv.slice(2);
 const flag = (name, dflt) => {
   const i = args.indexOf("--" + name);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : dflt;
@@ -201,8 +203,8 @@ const TEXT_REWRITE = new Set([".html", ".css", ".js", ".mjs", ".json", ".svg"]);
 const RECORDED_TYPE = new Map();
 for (const root of ROOTS) {
   try {
-    const mf = JSON.parse(await fsp.readFile(path.join(root, "mirror-manifest.json"), "utf8"));
-    for (const rec of Object.values(mf.files || {})) {
+    const mf = await readManifest(root);
+    for (const rec of Object.values(mf?.files || {})) {
       if (!rec || !rec.path || !rec.type) continue;
       RECORDED_TYPE.set(path.join(root, rec.path), rec.type);
       RECORDED_TYPE.set(path.join(root, rec.path, "index.html"), rec.type);
@@ -301,11 +303,12 @@ const localizeUrl = (abs) => {
   return EXT_HOSTS.includes(u.hostname) ? `/ext/${u.hostname}${u.pathname}` : u.pathname;
 };
 const trimSlash = (p) => p.replace(/(.)\/$/, "$1");
-for (const ledger of ["_scripts/redirects.tsv", "redirects.tsv"]) {
+for (const ledger of ["_scripts/" + REDIRECTS_FILE, REDIRECTS_FILE]) {
+  // First ledger that EXISTS wins, rows or not (readRedirects reads an absent
+  // file as empty, so existence is checked here).
+  if (!fs.existsSync(path.join(ROOT, ledger))) continue;
   try {
-    const tsv = await fsp.readFile(path.join(ROOT, ledger), "utf8");
-    for (const line of tsv.trim().split("\n").slice(1)) {
-      const [code, from, to] = line.split("\t");
+    for (const { status: code, from, to } of await readRedirects(ROOT, ledger)) {
       if (!from || !to) continue;
       // Drop entries that LOCALIZE TO A SELF-REDIRECT. Origins routinely carry
       // http->https redirects on the same path, and a crawler that meets one
@@ -626,8 +629,7 @@ async function resolveSoleQueryVariant(pathname) {
   const first = await resolve1(v[0]);
   if (v.length === 1) return first;
   if (!first) return null;
-  const { createHash } = await import("node:crypto");
-  const sha = async (f) => createHash("sha256").update(await fsp.readFile((await resolve1(f)).file)).digest("hex");
+  const sha = async (f) => sha256(await fsp.readFile((await resolve1(f)).file));
   const h0 = await sha(v[0]);
   for (const f of v.slice(1)) if (await sha(f) !== h0) return null;
   return first;

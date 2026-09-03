@@ -1,5 +1,142 @@
 # 更新记录
 
+## v0.3.19 — 战史外置：规则留在文档里，实证搬进 case-studies/（零丢失，逐句可证）
+
+评审清单的最后一项。每份 reference 里，规则与支撑它的实战故事是混写的——"实证 / 实测 / 【代号】"行在
+webgl-scenes 占 88%、animation-recovery 71%、mirroring 57%、verification-gates 33%。故事是规则可信的来源，
+不能删；但 agent 每次开工都要为它付 token，而它只在"这条规则为什么存在"被问到时才有用。
+
+**做法**：24 份文档（23 份 references + SKILL.md）各拆成两半——正文只留规则、判据、阈值、流程、决策表、
+代码块与一句话理由，故事逐字搬进 `references/case-studies/<name>.md`，章节号与母文档一一对应；规则原处留
+`（实证：case-studies/<name>.md §x.y）`，【代号】留在规则上，出处不丢。case-studies/ **不在任何必经集合里**，
+只在需要证据时读。
+
+**零丢失是可证的，不是承诺**：`selftest/check-cases.mjs` 把改动前（HEAD）的正文按 。；！？ 与表格单元切成
+句子（≥10 字），要求每一句**逐字**出现在新正文或案例文件之一。24 份全部 `missing 0`，共 6,800+ 句。
+⚠ 这道检查在过程中救了两次：一次是子代理中途失败，正文已改写而案例文件没落盘（shopify-platform，从
+HEAD 与工作树的差异重建）；一次是 8 句在改写中被吞（verification-gates）。**"我搬完了"和"一个字没少"是两件事，
+只有逐句比对能分辨。**
+
+**预算**（CJK 1–1.5 tok/字）：
+
+| 集合 | 改前 | 改后 |
+|---|---|---|
+| SKILL.md | 1.26–1.76 万 | 1.25–1.74 万 |
+| SKILL + 六必经 + scripts/README | 12.6–17.8 万 | 11.3–15.9 万 |
+| + Flow 实际要求的 dom-shell / determinism / legal / env-traps | 18.2–25.8 万 | 16.2–22.9 万 |
+
+references/ 总计 724 → 621 KB；case-studies/ 274 KB 移出必经集合。收缩比 0.72–0.90——**故事多在规则句内部
+（规则 + `：` + 实证同一行），拆到"只剩规则"就会伤到判据**，所以裁剪在每份文档都停在规则边界上，宁可少省。
+SKILL.md 本身只降 0.2 KB：它的战史本就只占 3%，其余是表格与流程。
+
+**新门**（selftest 140 → 143）：case-studies 的三条不变量——每份案例文件都有母文档；案例文件里每个编号标题都
+在母文档中存在；母文档里每个 `（实证：… §x.y）` 指针都落在案例文件真有的小节上。**指向空处的指针 = 规则的
+证据悄悄没了**，这正是本版最怕的失效形态。
+
+## v0.3.18 — lib 收拢：一份 CDP 客户端、一份 sha256、一份账本读写、一份请求头梯子、一份 findChrome
+
+评审清单最后一项工具级债。`verification-gates.md` §2.1.1 说"两处以上要算出同一个答案的逻辑必须单一实现"，
+而 scripts/ 自己有四份 CDP 客户端、三份 findChrome、五份 UA（两种 Chrome 版本）、四份请求头梯子、19 个文件 23 处
+sha256、四个账本写入方六个读取方各带一份 TSV 格式。本版把它们各收成一份；scripts + tools 净减 219 行，行为按
+"字节一致"验证（fixture 三本账 before/after 逐字节相同，除 `mirroredAt`）。
+
+**四个新 lib + 两个扩展**：
+- `lib/hash.mjs`：`sha256` / `sha256Short` / `sha256File`（流式）。19 文件 23 处 + 三份流式实现 → 1。
+- `lib/cdp.mjs`：`connectCdp(url)` → `send(m, p, {timeoutMs, sessionId})` / `on(method | "*")` / `evaluate` / `close`；
+  `cdpUrlFor(port)` 轮询 `/json/version`。probe / pixelcompare / netcapture / sweep-routes 四份私有客户端 + ports.mjs
+  迷你客户端 → 1。此前四份里两份没有 onclose：截图超过 WebSocket 载荷硬顶时静默挂死；现在每次调用有界、断连时在途
+  调用全部响亮拒绝。**真 Chrome 冒烟**（本机，不进 CI）：probe `--shot --walk 3 --no-external` CLEAN、sweep 2/2、
+  pixelcompare 跨侧 `meanAbsDiff 0` / `--self` self-band、`chrome.mjs --all` 零残留。
+- `lib/ledger.mjs`：manifest / inventory.tsv / redirects.tsv 的格式、排序、去重、追加、`writeLedgers` 一次写三本；
+  `LEDGER_FILES` + `isBookkeeping` 成为"哪些文件不是镜像"的唯一清单（verify-mirror 与 make-standalone 各存一份且已
+  漂移：后者缺 closure-gap.txt 与 wayback-*；点文件判定统一为任意层级）。⛔ `readManifest` 对**损坏**的账本抛错而不是
+  当空账本——mirror-site 此前会在损坏账本上新建一份并在结束时覆盖它。wayback-mirror 的 inventory 此前按插入序、
+  两个 worker 下不确定且对 carry-over 错误行会写出 `undefined` 单元格，现在与其它写入方同一形状。
+- `lib/negotiate.mjs` 扩展：`BROWSER_UA` / `BARE_UA`（五份 UA、Chrome/126 与 /128 混用 → 1）；`fetchProfiles` /
+  `fetchLadder`（std→bare 梯子：2xx 赢；3xx 原样交回调用方登记；std 上 401/403 才降到 bare；其它状态停）。mirror-site
+  与 netcapture `--fetch` 直接用梯子；reconcile-gaps 的规则不同（任何非 2xx 都降 bare、3xx 即停）——保留它的循环，
+  只从 `fetchProfiles` 取梯级，不改它试哪一级。
+- `lib/chrome.mjs` 扩展：`findChrome` / `CHROME_CANDIDATES`（三份候选表 + pixelcompare 写死的 macOS 路径 → Linux 上
+  ENOENT → 1；`CHROME_PATH` 优先）；`headlessArgs()` 公共无头参数（节流/后台化相关旗标两侧不许不同）。
+
+**可察觉的行为变化**（都是收拢的必然）：mirror-site 在 std 级抛传输异常时现在降到 bare 再试（此前直接抛）；
+`readManifest` 对缺 `files` 的文档抛错（此前 mirror-site / verify-mirror / serve 容忍）；fingerprint UA `126.0.0.0` → `126.0`、
+reconcile-gaps UA 128 → 126；pixelcompare 多了 `--disable-backgrounding-occluded-windows`（只防节流）；
+netcapture `--fetch` 显式 `redirect: "follow"`（此前也跟随，只是没写出来——镜像红线是爬虫的 `manual`，`--fetch` 补漏一直是跟随的）。
+
+**selftest 114 → 140**：hash 往返；ledger 往返（追加只加未知路径、损坏账本必抛、`redirectsText([])` 逐字节 `CODE\tFROM\tTO\n`）；
+negotiate 合同 + 回环服务器上的 403→bare / 404 不重试 / 302 原样 / 端口不通；chrome `headlessArgs`；cdp 两个负例。
+lib/ledger 与 lib/cdp 的正例还由 mirror-site 回环爬取、serve 回落链、真 Chrome 冒烟覆盖。
+
+## v0.3.17 — 一份 argv 合同：`--help` / `--version` / 未知旗标 FATAL 全覆盖，退出码表，tools 依赖钉版本，历史 tag
+
+上一版评审里"只写在文档里的规矩"又一条落成门：**"未知参数必须 FATAL"** 从 v0.1.x 就写在 verification-gates 里，实现它的脚本 57 个里只有 9 个。
+
+**`scripts/lib/cli.mjs`**：每个脚本（51 个工序脚本 + 10 个 tools + `lib/chrome.mjs` / `lib/ports.mjs` 的 CLI 模式）第一件事是
+`cli({ known, bools, file: import.meta.url })`——`--help`/`-h` 打印文件头注（用法一直住在那里）+ 旗标清单 + skill 版本；`--version`
+打印 skill 版本（`lib/version.mjs`，项目里的 `scripts/` 是拷贝，这个数字是判断它有没有落后的唯一依据，selftest 钉它等于
+SKILL.md frontmatter）；**未知旗标一律 FATAL 退 2 并列出已知集**。它只校验 argv 的形状，各脚本自己的 `flag()` 读法一个字不改；
+此前 9 个脚本各自的 KNOWN 检查删掉归一。迁移时清出 **30 余处"代码读了但头注没写"的旗标**（pixelcompare 一个脚本就有 11 个：
+`--self --pump --after-ready --hold --hold-grace --hold-after --drive --chunk --freeze-css --freeze-at --cdp-port`；make-standalone 13 个；
+probe 的 `--expect-side`；serve 的 `--host --fallback-root --query-ignore --query-only --rewrite`）全部补进头注用法行；
+cold-audit-modules 头注里的 `[--entry 14]` 从未被读取——删掉而不是登记成一个无事可做的旗标；extract-source 的 `--h` 别名退役。
+
+**退出码约定**（`cli.mjs` 的 `EXIT`，表见 scripts/README）：0 绿 / 1 门红 / 2 调用错误 / 3 身份 / 4 CDP 传输 / 5 前置条件不成立 /
+6 状态未到达 / 130 Ctrl-C 已落盘。5 在 pixelcompare 是空帧、在 module-map 是认不出容器，按含义读不按脚本猜；新脚本取常量不写裸数字。
+
+**selftest 110 → 114**：版本常量钉 frontmatter；对 57 个脚本逐个扫 `--help` 退 0 且有 `flags:` 清单、未知旗标退 2、
+**头注用法行里出现的每个旗标都在已知集里**（正是 probe `--expect-side` 那类 bug 的门）。tools 里 import babel 的两个在本仓无依赖，扫描明示跳过。
+
+**其它**：`tools/package.json` 首次声明并钉死 `@babel/parser` / `@babel/traverse`（7.29.8——darkroom 7.25 / raycastkbd 7.26 /
+storytellingnoomo 7.29 实跑过的那条线；basement 在 8.0.4 上跑过一次，一个样本）；`verify-fresh` 不再 `npx esbuild`（本地没装就静默拉最新，
+拉来的和 `dist/` 用的不是同一个 bundler），改用项目自己的 `node_modules/.bin/esbuild` 或 `--esbuild <path>`，缺失退 2；SKILL.md
+compatibility 写明 Step 0 之后 POSIX-only；本地为 v0.1.1–v0.3.16 共 98 个历史版本按 CHANGELOG 打了 git tag（未推送）。
+
+## v0.3.16 — 瘦身版：拆 verification-gates、重编号、SKILL 表瘦身、八条已核实 bug（全仓冷头评审回哺）
+
+对 v0.3.13–0.3.15 做了一次全仓冷头评审（报告留在 analyses/，不入库），本版只做**减法与修正**，不引入新方法论。
+
+**预算**：SKILL.md 55.2 → 40.9 KB——Script Directory 从 24 KB 的战史表缩成"一句话用途 + 阶段"表，完整版整表迁入
+`scripts/README.md`「速查表」与 `tools/README.md`；顺手补齐此前表里缺席的 sweep-routes / census-bundles / slice-esm /
+verify-reassembly / wayback-mirror / lib/ports / lib/urlpath / lib/extract-refs / modules-to-src / flight-to-mdx / group-parts。
+verification-gates.md 158 KB 按四道天然缝拆成四份：`verification-gates.md`（门型 / 决策树 / 运行纪律 / 分层体系，81 KB）、
+`gate-failure-modes.md`（失效模式 / 根因修复 / 残差归类，50 KB）、`gate-case-design.md`（用例设计 / 清单式核对，19 KB）、
+`payload-gates.md`（载荷与外壳变换的门，9.5 KB）——后三份按需加载，M(n-1) 开局只读第一份。
+
+**重编号**：verification-gates §4.9–4.12 各两个、determinism §0.1.2 / §6 / §7 各两个、readable-source §4–4.5 两套与 §3.0.1.1
+两个——全部消歧。失效模式 §4.x → gate-failure-modes §1.x（§4.7.1 → §1.9、§4.13 → §1.14、§4.20 → §1.15，§4.8.x 按序）、
+§5 / §6 → §2 / §3；前插块 §0.2x → gate-case-design §1–5；尾追块 §4.9–4.19 → payload-gates §1–7（§4.14 进 verification-gates
+§2.3、§4.17 进 §2.1.3；§4.16 与"顺带"删除——那是 CHANGELOG 内容）；旧 §7 常见坑 / §8 产出物 → §4 / §5。determinism 的状态对齐
+协议正式成为 §7（§7.1 不变），旧常见坑 / 自检 / 产出物顺延为 §8 / §9 / §10，§0.1 与 §0.2 的子节按序排好。readable-source 的
+交付物块成为 §9（9.1–9.6.1），§2.x 与 §3.0.4 / §3.0.5 按序排好，多 chunk 站一节改为 §3.0.1.4。全仓文件限定引用与文档内裸 §
+引用按映射表改写；一处悬空（VG §3.4）指向 gate-case-design §3，一处错文件（readable-source "§0.3"）指向 legal §0.2。
+SKILL.md 补标记图例（⛔ / ⛔⛔ / ⭐ / ⭐⭐ / ⚠ / 【代号】），References 列表补齐 archival-rescue / beyond-the-rebuild 与三份新文档，
+路由表加三行。
+
+**八条已核实 bug**（selftest 86 → 110）：
+1. `pixelcompare`：metric.json 的 `kind` 被旧文件的值覆盖（spread 顺序）——现在开拍前就拒绝在同一 `--out` 混用 `--self` 与跨侧（exit 2）。
+2. `lib/extract-refs`：扩展名 `{2,5}` 在五处各写一份，`.webmanifest` / `.jsonld` / `.geojson` 被当页面丢弃而闭包门报 ∅——统一为导出的
+   `EXT = {1,12}`，与 `lib/urlpath` 同一把尺。
+3. `netcapture`：跳过 206，Range 请求的 video / audio 从不进 GAP 对账——200 与 206 都算命中。
+4. `netcapture`：账本追加的 manifest 半段裹在裸 `catch {}` 里——读不到 manifest 直接 FATAL（exit 1），`--fetch` 开抓前先验账本；
+   `--fetch` 改走 `lib/negotiate` 的浏览器图片 Accept + std → bare 梯子，行记 `profile` / `vary`。
+5. `mirror-site`：绝对 `--out` 被拼到 cwd 下；非数字 `--rounds` / `--workers` 变 NaN、零轮仍报 Done（现 exit 2）；三本账只在结束写一次
+   （现每 100 个文件与 Ctrl-C 都落盘，exit 130）；瞬时 fetch 错误覆盖仍在盘上的好行（现保留）；重扫抽出的同源 `.html` 绕过 `--scope`
+   （现统一走 `enqueueRef` 页面守卫并当页面爬）。
+6. `probe`：KNOWN_FLAGS 漏了自家文档里的 `--expect-side` / `--evalAfterDelay`；URL 取第一个非 `--` 参数，`--wait 9000 <url>` 把 9000
+   当 URL——改为逐参数走。
+7. `lib/urlpath`：写入侧把同源 path-past-file URL 落成 `<flat>/index.html`，伺服侧只查裸文件——`serveCandidates` 现在给出
+   `localRelPath` 能产出的每一种拼写（含带查询后缀的 flat 形）。
+8. `lib/chrome`：把活着的兄弟浏览器的 renderer 判为孤儿——改为沿匹配树走到根、根的父进程没了才算孤儿。
+
+另：`make-standalone` 打印 FAIL 后退出 0（现 exit 1）；`serve` 的 `--redirects` / `--cdp-port` 从"接受但忽略"改为拒绝；`pixel-walk`
+usage 补 `--hold-after`；selftest 修掉一条永真断言（`serveCandidates` 第二参传错位）；`make-standalone` 一处指向不存在的
+asset-management §2.2 改指 §0.5。
+
+**新门**：selftest 新增文档结构自检——references/ 任何文档不得有重复章节号；SKILL.md / references / scripts / tools 里每一处
+`<文档> §x.y` 引用必须能解析到一个标题；SKILL.md References 列表必须列出 references/ 下每一份文档。这三条此前只在评审里查过一次，
+按本 skill 自己的话说：只写在文档里、没有东西去查的规矩会安静失效。
+
 ## v0.3.15 — 到达与相位是两种状态：raycastkbd 复审补齐（镜像门的三处失明 + 切片的容器外字节）
 
 raycastkbd（Turbopack / Next 16.3 / R3F，v0.1.69 单会话跑完的 L3）按 v0.3.14 复审：**移植本体

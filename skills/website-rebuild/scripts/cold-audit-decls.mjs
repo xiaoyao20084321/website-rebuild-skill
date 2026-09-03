@@ -23,7 +23,7 @@
  *             (`// Xx0`) — weak, listed for a human, never a pass by itself
  *   UNKNOWN   none of the above → exit 1. This is the roll-call's whole point:
  *             a function test cannot see a missing block; only a list can
- *             (verification-gates.md §0.24). It reports `n/N examined` because a
+ *             (gate-case-design.md §3). It reports `n/N examined` because a
  *             check that does not say how much it looked at is silent, not green
  *             (§0.24.0).
  *
@@ -64,12 +64,14 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { cli } from "./lib/cli.mjs";
+
+cli({ known: ["pretty", "ranges", "port", "overrides", "json", "min-name", "cite-tag", "slack"], bools: [], file: import.meta.url });
 
 const ACORN_VERSION = "8.14.0";
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf("--" + n); return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : d; };
-const KNOWN = new Set(["pretty", "ranges", "port", "overrides", "json", "min-name", "cite-tag", "slack"]);
-for (const a of args) if (a.startsWith("--") && !KNOWN.has(a.slice(2))) { console.error(`FATAL: unknown flag ${a}`); process.exit(2); }
+// Unknown flags are rejected by lib/cli.mjs (the one argv contract) before anything here runs.
 const PRETTY = flag("pretty", null);
 const PORT = flag("port", null);
 const RANGES_RAW = flag("ranges", null);

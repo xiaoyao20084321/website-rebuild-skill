@@ -72,6 +72,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertPortFree, labelPort, portSlot } from "./ports.mjs";
+import { cli } from "./cli.mjs";
 
 export const PROFILE_PREFIX = "wrs-chrome";
 
@@ -139,13 +140,41 @@ export function listInstances({ role = null, slot = portSlot() } = {}) {
     const dir = r.command.slice(at + "--user-data-dir=".length).split(/\s/)[0];
     found.push({ ...r, profile: dir, ...(parseProfileName(path.basename(dir)) || {}) });
   }
-  const pids = new Set(found.map((f) => f.pid));
+  markOrphans(found);
+  return found;
+}
+
+/**
+ * Decide `orphan` for every matched process, in place. Exported for the
+ * selftest; listInstances() is the only production caller.
+ *
+ * Orphaned = the BROWSER this process belongs to has lost its launcher. Walk up
+ * the matched tree (renderer -> zygote/helper -> browser main) to its ROOT — the
+ * matched process whose parent is NOT one of ours — and ask whether that parent
+ * is gone: reparented to pid 1, or no longer in the process table. Every member
+ * of the tree inherits the root's answer.
+ * ⛔ NOT "its parent is another matched Chrome". That predicate marked every
+ * renderer of a LIVE sibling browser — same role, other side, the concurrent
+ * mirror + rebuild probe that lib/ports.mjs exists to allow — as an orphan: a
+ * false LEFTOVER report, a reap that could not touch them (a renderer is not a
+ * group leader, so the group signal finds nothing) and then a "survived
+ * SIGKILL" warning about processes that were never leaked. A renderer whose
+ * browser has a live owner is that owner's business, exactly like the browser.
+ */
+export function markOrphans(found) {
+  const byPid = new Map(found.map((f) => [f.pid, f]));
+  const rootOf = (f) => {
+    const seen = new Set();
+    let cur = f;
+    while (byPid.has(cur.ppid) && !seen.has(cur.pid)) {
+      seen.add(cur.pid);
+      cur = byPid.get(cur.ppid);
+    }
+    return cur;
+  };
   for (const f of found) {
-    // Orphaned = the script that launched it is gone (reparented to pid 1), or
-    // its parent is another matched Chrome process (a renderer of a leaked
-    // browser), or the parent no longer exists at all. Anything else has a live
-    // owner and is somebody's business, not the sweeper's.
-    f.orphan = f.ppid === 1 || pids.has(f.ppid) || !isAlive(f.ppid);
+    const root = rootOf(f);
+    f.orphan = root.ppid === 1 || !isAlive(root.ppid);
   }
   return found;
 }
@@ -474,6 +503,8 @@ export function shotLikelyTooBig({ w, h, format }) {
 // --- CLI --------------------------------------------------------------------
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Only the CLI mode validates argv; importers never pay for it.
+  cli({ bools: ["all", "reap"], file: import.meta.url });
   const argv = process.argv.slice(2);
   const all = argv.includes("--all");
   const doReap = argv.includes("--reap");
@@ -504,3 +535,42 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   console.log(left.length ? `${left.length} survived SIGKILL: ${left.map((l) => l.pid).join(", ")}` : "all orphans reaped.");
   process.exit(left.length ? 1 : 0);
 }
+
+// ---- where Chrome is, once ------------------------------------------------------
+// probe, netcapture and sweep-routes each carried this list; pixelcompare had a
+// hardcoded macOS path and ENOENT'd on Linux. CHROME_PATH wins when set.
+export const CHROME_CANDIDATES = [
+  process.env.CHROME_PATH,
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+].filter(Boolean);
+
+/** First candidate that exists, or throws "Chrome not found. Set CHROME_PATH." */
+export async function findChrome() {
+  for (const c of CHROME_CANDIDATES) {
+    try { statSync(c); return c; } catch {}
+  }
+  throw new Error("Chrome not found. Set CHROME_PATH.");
+}
+
+/**
+ * The headless flag set every CDP script starts from. Tools add their own on top
+ * (viewport, autoplay, GL backend); these are the ones that must never differ
+ * between the two sides of a comparison — throttling and backgrounding flags
+ * change what a frame contains.
+ */
+export const headlessArgs = ({ port, width = 1280, height = 800, sentinelUrl }) => [
+  "--headless=new",
+  `--remote-debugging-port=${port}`,
+  "--no-first-run",
+  "--disable-background-timer-throttling",
+  "--disable-renderer-backgrounding",
+  "--disable-backgrounding-occluded-windows",
+  "--mute-audio",
+  `--window-size=${width},${height}`,
+  ...(sentinelUrl ? [sentinelUrl] : []),
+];

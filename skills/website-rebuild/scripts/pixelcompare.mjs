@@ -17,6 +17,8 @@
 //     [--label-a REBUILD] [--label-b MIRROR]
 //     [--format png|jpeg] [--quality 92]   frame encoding (see the ceiling below)
 //     [--max-mean 12]                  optional gate: exit 1 if meanAbsDiff exceeds
+//     [--self] [--pump dt,frames] [--after-ready N] [--hold expr] [--hold-grace ms] [--hold-after N]
+//     [--drive expr] [--chunk N] [--freeze-css] [--freeze-at -1s] [--cdp-port N]
 //
 // VIEWPORT SIZE IS LIMITED BY THE TRANSPORT, NOT BY CHROME. CDP hands the whole
 // frame back as ONE base64 WebSocket message and Node's built-in WebSocket dies
@@ -71,11 +73,23 @@ import {
   resolvePort,
 } from './lib/ports.mjs';
 import {
+  findChrome,
+  headlessArgs,
   launchChrome,
   preflightChrome,
   shotCeilingAdvice,
   shotLikelyTooBig,
 } from './lib/chrome.mjs';
+import { connectCdp } from './lib/cdp.mjs';
+import { cli } from './lib/cli.mjs';
+
+cli({
+  known: ['a', 'b', 'name', 'out', 'width', 'height', 'format', 'quality', 'settle', 'ready', 'after-ready',
+    'hold', 'hold-grace', 'hold-after', 'drive', 'pump', 'chunk', 'freeze-at', 'seed', 'label-a', 'label-b',
+    'max-mean', 'cdp-port'],
+  bools: ['self', 'freeze-css'],
+  file: import.meta.url,
+});
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -104,6 +118,23 @@ if (!URL_A || !URL_B) {
 }
 const NAME = flag('name', 'home');
 const OUT = flag('out', join(process.cwd(), 'docs', 'pixelcompare'));
+const KIND = args.includes('--self') ? 'self-band' : 'cross-side';
+// ⛔ Refuse to MIX KINDS in one metric.json, and refuse HERE — before the
+// server wait and before a browser is launched. The tag used to be spread
+// under the loaded object (`{kind, ...metrics}` with `metrics.kind` already
+// set), so the file kept whichever kind its first run wrote: a band file and
+// a cross-side pass could share one metric.json and the "tag travels with the
+// numbers" promise at the write site was never enforced. A file with no tag is
+// a pre-tag file and is simply tagged from here on.
+{
+  let prior = null;
+  try { prior = JSON.parse(readFileSync(join(OUT, 'metric.json'), 'utf8')).kind ?? null; } catch {}
+  if (prior && prior !== KIND) {
+    console.error(`FATAL: ${join(OUT, 'metric.json')} is tagged kind=${prior}, but this run is ${KIND}.`);
+    console.error(`       A band file and a cross-side file must not share one metric.json — use a different --out.`);
+    process.exit(2);
+  }
+}
 const W = Number(flag('width', 1280));
 const H = Number(flag('height', 800));
 // PNG by default: the saved frames are evidence and a byte-exact gate needs
@@ -191,10 +222,9 @@ const { port: CDP_PORT, label: CDP_LABEL } = resolvePort({
   envName: 'CDP_PORT',
 });
 
-const CHROME =
-  process.env.CHROME_BIN ||
-  process.env.CHROME_PATH ||
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// CHROME_BIN stays as this script's own override; the candidate list and
+// CHROME_PATH live in lib/chrome.mjs (the old hardcoded macOS path ENOENT'd on Linux).
+const CHROME = process.env.CHROME_BIN || await findChrome();
 
 const waitFor = (fn, ms, label) => new Promise((resolve, reject) => {
   const t0 = Date.now();
@@ -263,10 +293,11 @@ const chrome = launchChrome({
   role: 'pixelcompare',
   port: CDP_PORT,
   tool: 'pixelcompare.mjs',
+  // The shared headless set (anti-throttling, sentinel) plus autoplay, so both
+  // sides' videos are at the same frame without a gesture.
   args: [
-    '--headless=new', `--remote-debugging-port=${CDP_PORT}`,
-    '--no-first-run', '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-    '--mute-audio', `--window-size=${W},${H}`, '--autoplay-policy=no-user-gesture-required', sentinel.url,
+    ...headlessArgs({ port: CDP_PORT, width: W, height: H, sentinelUrl: sentinel.url }),
+    '--autoplay-policy=no-user-gesture-required',
   ],
 });
 // Our own page or nothing: attaching to a browser this script did not start
@@ -275,62 +306,24 @@ const target = await assertOwnBrowser({
   port: CDP_PORT, sentinel, tool: 'pixelcompare.mjs', pid: chrome.pid,
 });
 
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-let msgId = 0;
-const pending = new Map();
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.id && pending.has(msg.id)) {
-    const p = pending.get(msg.id);
-    pending.delete(msg.id);
-    msg.error ? p.reject(new Error(msg.error.message)) : p.resolve(msg.result);
-  }
-};
-// THE loud-failure hook. An oversized screenshot does not return an error, it
-// kills the connection (close 1006); with no onclose handler and no timeout the
-// in-flight call never settles and the script hangs forever, printing nothing.
-// A silent timeout is the worst failure shape there is, so both are handled.
-let socketClose = null;
-ws.onclose = (ev) => {
-  socketClose = ev?.code ?? 1006;
-  const err = new Error(
-    `CDP socket closed (${socketClose}) with ${pending.size} call(s) in flight — ` +
-      `on a screenshot this means the frame exceeded Node's WebSocket payload ceiling`,
-  );
-  for (const p of pending.values()) p.reject(err);
-  pending.clear();
-};
-const cdp = (method, params = {}, timeoutMs = 120000) => new Promise((resolve, reject) => {
-  if (socketClose !== null) {
-    reject(new Error(`CDP socket already closed (${socketClose}); cannot send ${method}`));
-    return;
-  }
-  const id = ++msgId;
-  const timer = setTimeout(() => {
-    pending.delete(id);
-    reject(new Error(`CDP timeout after ${timeoutMs}ms: ${method}`));
-  }, timeoutMs);
-  pending.set(id, {
-    resolve: (v) => { clearTimeout(timer); resolve(v); },
-    reject: (e) => { clearTimeout(timer); reject(e); },
-  });
-  ws.send(JSON.stringify({ id, method, params }));
-});
+// THE loud-failure hook (an oversized screenshot kills the connection with
+// close 1006 instead of returning an error) and the per-call timeout both live
+// in lib/cdp.mjs; a silent hang is the worst failure shape there is.
+const cdp = await connectCdp(target.webSocketDebuggerUrl, { defaultTimeoutMs: 120000 });
 const evalJs = async (expression) => {
-  const res = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+  const res = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
   if (res.exceptionDetails) throw new Error(res.exceptionDetails.exception?.description || 'eval failed');
   return res.result.value;
 };
 
-await cdp('Runtime.enable');
-await cdp('Page.enable');
-await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
-if (SEED) await cdp('Page.addScriptToEvaluateOnNewDocument', { source: SEED });
+await cdp.send('Runtime.enable');
+await cdp.send('Page.enable');
+await cdp.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+if (SEED) await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SEED });
 if (FREEZE_CSS) {
   // Injected on new document so it applies before first paint, and re-applied
   // after settle (below) for anything mounted later.
-  await cdp('Page.addScriptToEvaluateOnNewDocument', {
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => {
       const css = \`*, *::before, *::after {
         animation-play-state: paused !important;
@@ -358,7 +351,7 @@ function shotFatal(label, err) {
     w: W, h: H,
     format: FORMAT,
     quality: FORMAT === 'png' ? null : QUALITY,
-    closeCode: socketClose,
+    closeCode: cdp.closed,
   })) console.error(`[pixel] ${l}`);
   chrome.reap();
   process.exit(4);
@@ -366,7 +359,7 @@ function shotFatal(label, err) {
 
 let landA = null, landB = null;
 async function capture(url, label) {
-  await cdp('Page.navigate', { url });
+  await cdp.send('Page.navigate', { url });
   // ⛔ --ready is NOT a pre-pump wait. Checking it before the pump can only ever
   // express "ready without any driving", and on a frozen page the states worth
   // waiting for are exactly the ones the pump has to produce: a preloader that
@@ -484,7 +477,7 @@ async function capture(url, label) {
   }
   let data;
   try {
-    ({ data } = await cdp('Page.captureScreenshot', {
+    ({ data } = await cdp.send('Page.captureScreenshot', {
       format: FORMAT,
       ...(FORMAT === 'png' ? {} : { quality: QUALITY }),
     }));
@@ -523,13 +516,13 @@ const inlineFatal = (step, err) => {
   console.error(`[pixel]   it inlines BOTH frames into one CDP message (${INLINE_B64.toLocaleString()} base64 chars) and reads the result back.`);
   for (const l of shotCeilingAdvice({
     w: W, h: H, format: FORMAT, quality: FORMAT === 'png' ? null : QUALITY,
-    sizeB64: INLINE_B64, closeCode: socketClose,
+    sizeB64: INLINE_B64, closeCode: cdp.closed,
   })) console.error(`[pixel] ${l}`);
   chrome.reap();
   process.exit(4);
 };
 
-// --- NON-BLANK PRECONDITION (verification-gates.md §4.8) ---------------------
+// --- NON-BLANK PRECONDITION (gate-failure-modes.md §1.8) ---------------------
 // ⛔ Runs BEFORE the diff, and it is not optional. A comparison of two empty
 // frames reports meanAbsDiff 0, worstCellDiff 0, similarity 100 — the exact
 // shape of a perfect result. Measured on a WebGL target whose determinism
@@ -663,13 +656,16 @@ writeFileSync(join(OUT, `side-by-side-${NAME}.jpg`), Buffer.from(composite, 'bas
 // merge into metric.json so repeated runs (one per view/state) accumulate
 let metrics = {};
 try { metrics = JSON.parse(readFileSync(join(OUT, 'metric.json'), 'utf8')); } catch {}
+// Strip the loaded tag so this run's KIND wins the spread (the kind check
+// above already guaranteed the two agree, or exited before any pixel was taken).
+delete metrics.kind;
 metrics[NAME] = metric;
 // The tag travels with the numbers: a band file must never be readable later as
 // a cross-side pass. Anything consuming these files should refuse to mix kinds.
-writeFileSync(join(OUT, 'metric.json'), JSON.stringify({ kind: SELF ? 'self-band' : 'cross-side', ...metrics }, null, 2));
+writeFileSync(join(OUT, 'metric.json'), JSON.stringify({ kind: KIND, ...metrics }, null, 2));
 console.log('[pixel] wrote', OUT);
 
-ws.close();
+cdp.close();
 // Reap the whole process group and only then delete the profile — a live Chrome
 // keeps writing into that directory, so removing it first throws ENOTEMPTY and a
 // passing comparison exits non-zero on a failure that says nothing about the

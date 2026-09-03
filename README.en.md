@@ -37,7 +37,7 @@ It follows the [Agent Skills open standard](https://agentskills.io/) and is buil
 - **Line-traceable reverse engineering** — every line in the rebuild points back to a line in the source bundle; bugs and oddities are copied verbatim, never "fixed"
 - **Quantified acceptance** — five automated comparison layers: console / network / DOM / geometry / **pixel-by-pixel**; every difference is either fixed or registered, never glossed over
 - **Source-form delivery** — the verbatim port is rewritten into a human-readable project (split into modules, named from evidence, provenance headers added) that **runs offline anywhere you copy it**
-- **Zero-dependency toolchain** — 70 Node scripts (51 stage scripts and gates + 9 shared libs + 10 sourcification/reconstruction tools); until the final stage, the pipeline installs no npm packages
+- **Zero-dependency toolchain** — 75 Node scripts (51 stage scripts and gates + 14 shared libs + 10 sourcification/reconstruction tools); until the final stage, the pipeline installs no npm packages
 - **Dead sites can be rescued** — Wayback archive salvage: anchor + time-window selection of a coherent moment, raw bytes landed as a standard mirror, permanent holes honestly registered; five dead-site salvages in practice (four revived, one to full L3; one art layer certifiably lost — the failure mode is in the book)
 - **Even RSC sites can be reconstructed** — server component source is never shipped (React Server Components / Next.js App Router), but its complete output (the flight stream) inlined in every page's HTML *is* the spec: reconstruct a buildable Next project from it and close with flight-semantics gates. Measured on a Next 16/Turbopack blog: 18/18 routes semantically identical, and on a 144-route heavyweight: PASS 144/144; blind reverse-engineering graded against the public source scored ≈95% structure / ≈98% behavior
 - **Legal decisions belong to the user** — the skill only collects evidence and presents it; output defaults to private + noindex + not deployed
@@ -227,7 +227,8 @@ Representatives from 43 probed sites that drew the boundary — **the boundary i
 ```
 skills/website-rebuild/    # the skill itself, laid out per the agentskills.io standard
 ├── SKILL.md               #   main pipeline + triage + disciplines (loaded whole on activation)
-├── references/            #   20 scenario guides (loaded on demand)
+├── references/            #   23 scenario guides (loaded on demand)
+│   └── case-studies/      #     the evidence behind each doc's rules; never in a mandatory set
 ├── assets/templates/      #   document templates
 ├── scripts/               #   zero-dependency Node stage scripts and gates + lib/ shared modules
 │                          #     every stage before sourcification lives here
@@ -260,7 +261,7 @@ Before anything goes public, per-asset copyright **forensics** must be completed
 
 Versions advance with real rebuild projects: every feature and fix shipped was first validated on at least one complete project.
 
-Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.15** — arrival and phase are two different states: raycastkbd (an L3 from the v0.1.69 days) re-audited against v0.3.14 — the port itself held, but the mirror gate was blind in three places underneath "closure = ∅" (`/_next/image?url=` rungs dropped as pages, 13 Turbopack loader-stub files never requested, 51 MB of unregistered egress carried by a route-prefetch payload); brought up the same day with eight tool-level lessons: extract-refs treats srcset/proxy rungs as assets, slice-modules carries the Sentry prologue outside the container verbatim (token gate 0/54 → 61/61), serve gets a fallback chain and keeps a stub host's DSN a DSN, `pixelcompare --hold/--hold-after/--hold-grace` (a GLB decoded on a worker is a state you wait for, not one you pump to), cold-audit recognises the one-parameter factory, make-standalone takes a mirror chain; selftest 71→86.
+Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.19** — war stories externalized: all 24 docs split into rules and evidence, the stories moved verbatim into `references/case-studies/` (outside every mandatory set, read only when you ask why a rule exists), each rule keeping a pointer and its 【codename】 provenance; zero loss is proven sentence-by-sentence by `check-cases.mjs` (6,800+ sentences, all `missing 0`, and it caught two gaps left by interrupted workers); the mandatory set drops from 126–178K to 113–159K tokens; selftest 140→143 (three case-study invariants: parent exists, headings match, no pointer into thin air).
 
 ## Contributing
 

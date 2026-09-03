@@ -10,7 +10,7 @@
  *        [--evalAfter "expr"] [--evalAfterDelay 2000] [--mobile]
  *        [--walk 24] [--walk-dwell 700] [--no-external]
  *        [--format png|jpeg] [--quality 92]
- *        [--side mirror|rebuild] [--cdp-port N]
+ *        [--side mirror|rebuild] [--expect-side mirror|rebuild] [--cdp-port N]
  *
  * BROWSER LIFECYCLE (scripts/lib/chrome.mjs — read its header once):
  *   The browser is spawned as a PROCESS GROUP and the whole group is reaped on
@@ -58,7 +58,7 @@
  *   -> shopifydesign-rebuild (--no-external assertion for the offline gate,
  *      --walk full-page scroll walk).
  */
-import { writeFile, access } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import {
   annotateHost,
   assertOwnBrowser,
@@ -69,40 +69,16 @@ import {
   resolvePort,
 } from './lib/ports.mjs';
 import {
+  findChrome,
+  headlessArgs,
   launchChrome,
   preflightChrome,
   shotCeilingAdvice,
   shotLikelyTooBig,
 } from './lib/chrome.mjs';
+import { connectCdp } from './lib/cdp.mjs';
+import { cli } from './lib/cli.mjs';
 
-// Chrome discovery: first existing candidate wins; override with CHROME_PATH.
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/usr/bin/google-chrome',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-].filter(Boolean);
-
-async function findChrome() {
-  for (const c of CHROME_CANDIDATES) {
-    try {
-      await access(c);
-      return c;
-    } catch {}
-  }
-  console.error('FATAL: Chrome not found. Set CHROME_PATH.');
-  process.exit(3);
-}
-
-const args = process.argv.slice(2);
-const url = args.find((a) => !a.startsWith('--'));
-const flag = (name, dflt) => {
-  const i = args.indexOf('--' + name);
-  return i >= 0 ? args[i + 1] : dflt;
-};
-const has = (name) => args.includes('--' + name);
 // ⛔ AN UNKNOWN FLAG MUST BE FATAL, NOT SILENCE. This tool sat in a toolchain
 // whose sibling (netcapture.mjs) takes --settle; passing --settle HERE was
 // silently ignored and every "long" observation quietly ran at the 6-second
@@ -110,21 +86,32 @@ const has = (name) => args.includes('--' + name);
 // 6.2s frame every run, a timer that "never fired" (it was 2s away), a
 // suspected reload loop, a suspected renderer crash, a suspected patched clock
 // — all of it an artifact of one misspelled flag that nothing rejected.
-const KNOWN_FLAGS = new Set(['shot', 'format', 'quality', 'wait', 'scroll', 'walk', 'walk-dwell',
-  'no-external', 'eval', 'evalAfter', 'mobile', 'side', 'cdp-port', 'width', 'height']);
-{
-  const bad = [];
-  for (const a of args) {
-    if (!a.startsWith('--')) continue;
-    const name = a.slice(2);
-    if (!KNOWN_FLAGS.has(name)) bad.push(a);
-  }
-  if (bad.length) {
-    console.error(`FATAL: unknown flag(s): ${bad.join(' ')}`);
-    console.error('       known: ' + [...KNOWN_FLAGS].map((f) => '--' + f).join(' '));
-    process.exit(2);
-  }
-}
+// The check now lives in lib/cli.mjs (one contract for every script); this is
+// the set it validates against. Bools take no value; every other flag consumes
+// the next argument.
+// ⛔ WALK THE ARGV; do not `find` the first token without dashes. With a flag
+// ahead of the URL (`--wait 9000 http://…`) that token is the flag's VALUE, and
+// the probe died on `new URL('9000')` with a bare TypeError — after the flag
+// check, before saying what it was given. A value a known flag consumes is
+// never inspected as a flag or as the URL; the first bare token left is the URL
+// — cli() does that walk and hands the leftovers back as positionals.
+const { positionals } = cli({
+  known: ['shot', 'format', 'quality', 'wait', 'scroll', 'walk', 'walk-dwell',
+    'eval', 'evalAfter', 'evalAfterDelay', 'side', 'expect-side', 'cdp-port', 'width', 'height'],
+  bools: ['no-external', 'mobile'],
+  file: import.meta.url,
+  positional: '<url>',
+});
+
+const args = process.argv.slice(2);
+const flag = (name, dflt) => {
+  const i = args.indexOf('--' + name);
+  return i >= 0 ? args[i + 1] : dflt;
+};
+const has = (name) => args.includes('--' + name);
+// The URL is the first bare token cli() left over once every known flag had
+// taken its value (see the walk note at the top).
+const url = positionals[0] ?? null;
 if (!url) {
   console.error('usage: probe.mjs <url> [--shot out.png] [--format png|jpeg] [--quality 92] [--wait ms] [--scroll frac] [--walk steps] [--walk-dwell ms] [--no-external] [--eval expr] [--evalAfter expr] [--mobile] [--side mirror|rebuild] [--cdp-port N]');
   process.exit(2);
@@ -185,7 +172,12 @@ await preflightChrome({
   note: PORT_EXPLICIT ? 'this port came from --cdp-port/CDP_PORT' : null,
 });
 
-const CHROME = await findChrome();
+// Chrome discovery (candidate list, CHROME_PATH override) lives in lib/chrome.mjs;
+// a miss is fatal here.
+const CHROME = await findChrome().catch(() => {
+  console.error('FATAL: Chrome not found. Set CHROME_PATH.');
+  process.exit(3);
+});
 // One-shot landing page: the attach step below refuses anything else, so this
 // probe cannot end up driving a browser some other script started.
 const sentinel = chromeSentinel();
@@ -196,20 +188,13 @@ const chrome = launchChrome({
   role: 'probe',
   port,
   tool: 'probe.mjs',
+  // headlessArgs carries the anti-throttling set (oryzo/samsy/noomo all hit this
+  // independently: background rAF throttling masquerades as a dead site and
+  // corrupts every measurement) plus the sentinel URL; the two below are ours.
   args: [
-    '--headless=new',
-    `--remote-debugging-port=${port}`,
-    '--no-first-run',
+    ...headlessArgs({ port, width: W, height: H, sentinelUrl: sentinel.url }),
     '--disable-gpu-sandbox',
     '--hide-scrollbars',
-    '--mute-audio',
-    // Anti-throttling (oryzo/samsy/noomo all hit this independently): background
-    // rAF throttling masquerades as a dead site and corrupts every measurement.
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-backgrounding-occluded-windows',
-    `--window-size=${W},${H}`,
-    sentinel.url,
   ],
 });
 // ⛔ process.exit() truncates whatever stdout has not drained. Piped to another
@@ -234,40 +219,12 @@ const cleanup = (code) => {
 // another script's page, or even chrome://newtab.
 const target = await assertOwnBrowser({ port, sentinel, tool: 'probe.mjs', pid: chrome.pid });
 
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-let msgId = 0;
-const pending = new Map();
-// A dead socket must fail LOUDLY. Without this handler an oversized screenshot
-// (see the header) closes the connection with 1006 and every in-flight call
-// simply never settles — the probe hangs until something outside kills it, and
-// prints nothing about why.
-let socketClose = null;
-ws.onclose = (ev) => {
-  socketClose = ev?.code ?? 1006;
-  const err = new Error(
-    `CDP socket closed (${socketClose}) with ${pending.size} call(s) in flight — ` +
-      `if this happened on a screenshot, the frame exceeded Node's WebSocket payload ceiling`,
-  );
-  for (const p of pending.values()) p.reject(err);
-  pending.clear();
-};
-const send = (method, params = {}, timeoutMs = 60000) =>
-  new Promise((resolve, reject) => {
-    if (socketClose !== null) {
-      reject(new Error(`CDP socket already closed (${socketClose}); cannot send ${method}`));
-      return;
-    }
-    const id = ++msgId;
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error(`CDP timeout after ${timeoutMs}ms: ${method}`));
-    }, timeoutMs);
-    pending.set(id, {
-      resolve: (v) => { clearTimeout(timer); resolve(v); },
-      reject: (e) => { clearTimeout(timer); reject(e); },
-    });
-    ws.send(JSON.stringify({ id, method, params }));
-  });
+// A dead socket must fail LOUDLY (an oversized screenshot closes it with 1006,
+// see the header) and every call is bounded — both guards live in lib/cdp.mjs.
+const cdp = await connectCdp(target.webSocketDebuggerUrl, {
+  defaultTimeoutMs: 60000,
+  closeHint: "if this happened on a screenshot, the frame exceeded Node's WebSocket payload ceiling",
+});
 
 const consoleMsgs = [];
 const pageErrors = [];
@@ -277,14 +234,7 @@ const external = new Map(); // host -> count
 const SELF_ORIGIN = new URL(url).origin;
 const NO_EXTERNAL = has('no-external');
 
-ws.onmessage = (ev) => {
-  const m = JSON.parse(ev.data);
-  if (m.id && pending.has(m.id)) {
-    const { resolve, reject } = pending.get(m.id);
-    pending.delete(m.id);
-    m.error ? reject(new Error(m.error.message)) : resolve(m.result);
-    return;
-  }
+cdp.on('*', (m) => {
   switch (m.method) {
     case 'Runtime.consoleAPICalled': {
       const text = m.params.args
@@ -343,42 +293,37 @@ ws.onmessage = (ev) => {
       break;
     }
   }
-};
+});
 
-await new Promise((r) => (ws.onopen = r));
 let navigations = 0;
 const lifecycle = [];
-await send('Network.enable');
-await send('Inspector.enable');
-await send('Log.enable');
-await send('Runtime.enable');
-await send('Page.enable');
-await send('Emulation.setDeviceMetricsOverride', {
+await cdp.send('Network.enable');
+await cdp.send('Inspector.enable');
+await cdp.send('Log.enable');
+await cdp.send('Runtime.enable');
+await cdp.send('Page.enable');
+await cdp.send('Emulation.setDeviceMetricsOverride', {
   width: W,
   height: H,
   deviceScaleFactor: 1,
   mobile: has('mobile'),
 });
 if (has('mobile'))
-  await send('Emulation.setUserAgentOverride', {
+  await cdp.send('Emulation.setUserAgentOverride', {
     userAgent:
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
   });
 
 const loaded = new Promise((r) => {
-  const h = (ev) => {
-    const m = JSON.parse(ev.data);
-    if (m.method === 'Page.loadEventFired') r();
-  };
-  ws.addEventListener('message', h);
+  cdp.on('Page.loadEventFired', () => r());
 });
-await send('Page.navigate', { url });
+await cdp.send('Page.navigate', { url });
 await Promise.race([loaded, new Promise((r) => setTimeout(r, 20000))]);
 await new Promise((r) => setTimeout(r, WAIT));
 
 const scroll = Number(flag('scroll', 0));
 if (scroll > 0) {
-  await send('Runtime.evaluate', {
+  await cdp.send('Runtime.evaluate', {
     expression: `window.scrollTo({top: (document.documentElement.scrollHeight - innerHeight) * ${scroll}, behavior: 'instant'})`,
   });
   await new Promise((r) => setTimeout(r, 1500));
@@ -391,14 +336,14 @@ const walk = Number(flag('walk', 0));
 if (walk > 0) {
   const dwell = Number(flag('walk-dwell', 700));
   for (let i = 0; i <= walk; i += 1) {
-    await send('Runtime.evaluate', {
+    await cdp.send('Runtime.evaluate', {
       expression: `(() => { const max = document.documentElement.scrollHeight - innerHeight;
         window.scrollTo({ top: max * ${i} / ${walk}, behavior: 'instant' });
         window.dispatchEvent(new WheelEvent('wheel', { deltaY: 400, bubbles: true, cancelable: true })); })()`,
     });
     await new Promise((r) => setTimeout(r, dwell));
   }
-  await send('Runtime.evaluate', { expression: `window.scrollTo({ top: 0, behavior: 'instant' })` });
+  await cdp.send('Runtime.evaluate', { expression: `window.scrollTo({ top: 0, behavior: 'instant' })` });
   await new Promise((r) => setTimeout(r, 1200));
 }
 
@@ -408,7 +353,7 @@ if (evalExpr) {
   // of a pending Promise is an empty object, so the caller gets a well-formed
   // answer that contains nothing — and anything driving the page has to await a
   // frame, which means anything interesting here is async.
-  const r = await send('Runtime.evaluate', { expression: evalExpr, returnByValue: true, awaitPromise: true });
+  const r = await cdp.send('Runtime.evaluate', { expression: evalExpr, returnByValue: true, awaitPromise: true });
   if (r.exceptionDetails) {
     console.log('EVAL-THREW:', JSON.stringify(r.exceptionDetails.exception?.description || r.exceptionDetails.text));
   }
@@ -419,7 +364,7 @@ if (evalExpr) {
 const evalAfter = flag('evalAfter', null);
 if (evalAfter) {
   await new Promise((r) => setTimeout(r, Number(flag('evalAfterDelay', 2000))));
-  const r = await send('Runtime.evaluate', { expression: evalAfter, returnByValue: true, awaitPromise: true });
+  const r = await cdp.send('Runtime.evaluate', { expression: evalAfter, returnByValue: true, awaitPromise: true });
   console.log('EVAL-AFTER:', JSON.stringify(r.result?.value ?? r.result?.description, null, 1));
 }
 
@@ -432,7 +377,7 @@ if (SHOT) {
   }
   let data;
   try {
-    ({ data } = await send('Page.captureScreenshot', {
+    ({ data } = await cdp.send('Page.captureScreenshot', {
       format: SHOT_FORMAT,
       ...(SHOT_FORMAT === 'png' ? {} : { quality: SHOT_QUALITY }),
     }, 120000));
@@ -442,7 +387,7 @@ if (SHOT) {
       w: W, h: H,
       format: SHOT_FORMAT,
       quality: SHOT_FORMAT === 'png' ? null : SHOT_QUALITY,
-      closeCode: socketClose,
+      closeCode: cdp.closed,
     })) console.error(`[probe] ${l}`);
     cleanup(4);
   }

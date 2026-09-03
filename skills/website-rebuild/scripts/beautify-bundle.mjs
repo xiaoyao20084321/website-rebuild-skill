@@ -19,9 +19,12 @@
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { tokenStream, firstDivergence, showToken } from "./lib/tokens.mjs";
+import { cli } from "./lib/cli.mjs";
+import { sha256 } from "./lib/hash.mjs";
+
+cli({ known: ["out"], bools: [], file: import.meta.url, positional: "<bundle.js> [...more files]" });
 
 // The pinned beautifier version. NEVER bump mid-project: regenerate everything
 // and re-verify every recorded line reference if you must change it.
@@ -146,7 +149,7 @@ for (const file of FILES) {
       console.error(`  ⚠ token check skipped: ${tokens}`);
     }
   }
-  const sha = createHash("sha256").update(readFileSync(src)).digest("hex");
+  const sha = sha256(readFileSync(src));
   entries.push({
     pretty: path.basename(dest),
     source: path.relative(process.cwd(), src),

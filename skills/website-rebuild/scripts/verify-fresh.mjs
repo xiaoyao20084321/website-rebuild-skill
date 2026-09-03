@@ -17,14 +17,17 @@
  * slice-modules --check and build-site --check already apply; this closes the
  * one step that lacked it.
  *
- *   node scripts/verify-fresh.mjs
+ *   node scripts/verify-fresh.mjs [--entry src/index.js] [--dist dist/site.js] [--served site/_next/static/chunks/site.port.js] [--esbuild node_modules/.bin/esbuild]
  */
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { cli } from "./lib/cli.mjs";
+import { sha256 } from "./lib/hash.mjs";
+
+cli({ known: ["entry", "dist", "served", "esbuild"], bools: [], file: import.meta.url });
 
 // ⛔ NOT hardcoded. These three paths named one project's shape for several
 // releases, which is how a gate ends up FATAL on a port that is merely built
@@ -32,7 +35,6 @@ import path from "node:path";
 // packer's own chunks verbatim, and this gate's whole subject is absent.
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf("--" + n); return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : d; };
-const sha = (b) => createHash("sha256").update(b).digest("hex");
 const ENTRY = path.resolve(flag("entry", "src/index.js"));
 const DIST = path.resolve(flag("dist", "dist/site.js"));
 const SERVED = path.resolve(flag("served", "site/_next/static/chunks/site.port.js"));
@@ -53,7 +55,21 @@ if (!existsSync(ENTRY)) {
 
 const tmp = await mkdtemp(path.join(tmpdir(), "fresh-"));
 const rebuilt = path.join(tmp, path.basename(DIST));
-const r = spawnSync("npx", ["esbuild", ENTRY, "--bundle", "--format=iife", `--outfile=${rebuilt}`], { encoding: "utf8" });
+// ⛔ THE PROJECT'S OWN esbuild, never a fetched one. This gate asks "is dist/ what
+// the generator would produce NOW" — and the generator is the esbuild the project
+// pinned in its devDependencies (make-standalone writes it). A bare `npx esbuild`
+// fell back to fetching the newest release when no local install existed, and a
+// global pin (tried: 0.28.2) is the same mistake in the other direction: either
+// way the rebuild uses a different bundler than dist/ and a byte drift reads as
+// staleness. Resolve the local binary (or --esbuild <path>); if there is none,
+// say so and stop — a gate that quietly picks its own tool is not a gate.
+const ESBUILD = flag("esbuild", path.join(process.cwd(), "node_modules", ".bin", "esbuild"));
+if (!existsSync(ESBUILD)) {
+  console.error(`FATAL: no esbuild at ${ESBUILD}`);
+  console.error("       verify-fresh rebuilds with the PROJECT's pinned esbuild (devDependencies); install it, or pass --esbuild <path>.");
+  process.exit(2);
+}
+const r = spawnSync(ESBUILD, [ENTRY, "--bundle", "--format=iife", `--outfile=${rebuilt}`], { encoding: "utf8" });
 if (r.status !== 0) {
   console.error(`FATAL — rebuilding ${path.relative(process.cwd(), ENTRY)} failed:\n${(r.stderr || "").split("\n").slice(0, 12).join("\n")}`);
   process.exit(5);
@@ -62,22 +78,22 @@ if (r.status !== 0) {
 const now = await readFile(rebuilt);
 const disk = await readFile(DIST).catch(() => null);
 if (!disk) { fail++; console.log(`  FAIL dist/site.js is missing — run \`npm run src:build\``); }
-else if (sha(now) !== sha(disk)) {
+else if (sha256(now) !== sha256(disk)) {
   fail++;
   console.log(`  FAIL dist/site.js differs from a fresh build of src/`);
-  console.log(`         on disk ${sha(disk).slice(0, 16)}   rebuilt ${sha(now).slice(0, 16)}`);
+  console.log(`         on disk ${sha256(disk).slice(0, 16)}   rebuilt ${sha256(now).slice(0, 16)}`);
   console.log(`       src/ changed after the bundle was built. Run \`npm run src:build && npm run build\`.`);
-} else console.log(`  ok   dist/site.js is a current build of src/  (${sha(disk).slice(0, 16)})`);
+} else console.log(`  ok   dist/site.js is a current build of src/  (${sha256(disk).slice(0, 16)})`);
 
 // ⚠ And the served copy must be that same bundle. build-site copies it in, so a
 // build-site that was never re-run leaves the OLD bundle being served while
 // dist/ is correct — the gap moves one step downstream rather than closing.
 const served = await readFile(SERVED).catch(() => null);
 if (!served) { fail++; console.log(`  FAIL site/ does not carry the port bundle — run \`npm run build\``); }
-else if (disk && sha(served) !== sha(disk)) {
+else if (disk && sha256(served) !== sha256(disk)) {
   fail++;
   console.log(`  FAIL the bundle in site/ is not the one in dist/`);
-  console.log(`         dist ${sha(disk).slice(0, 16)}   served ${sha(served).slice(0, 16)}`);
+  console.log(`         dist ${sha256(disk).slice(0, 16)}   served ${sha256(served).slice(0, 16)}`);
   console.log(`       Run \`npm run build\` — the shell build copies dist/ into site/.`);
 } else console.log(`  ok   site/ serves exactly the bundle in dist/`);
 
