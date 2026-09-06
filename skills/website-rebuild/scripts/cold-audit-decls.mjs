@@ -60,6 +60,11 @@
  *
  * Zero-dependency: the tokenizer is a version-pinned `npx acorn` spawn
  * (lib/tokens.mjs's rule: parse on a token stream, never on text — F27).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`cold-audit-decls.mjs`）
+ * **M(n) 冷头点名（扁平 scope-hoisted 产物）**：Vite/esbuild/Rollup 产物没有模块容器，点名单位是**深度 0 声明**（class / function / const-let-var 链的每个绑定，含解构）。在 token 流上列出、限定到应用区间，逐条问"落在 port 哪里"：**cited**（port 注释引用的 `pretty L…` 区间含它，`--slack 1` 容忍头注释差一行）> **override**（`collapsed` npm/addon/编译器产物顶替、`omitted` 登记死代码、`ported` 人工裁决；范围级可带 `match` 正则只收编译期常量）> **named**（压缩名出现在带引用的注释里，仅供人读）> **UNKNOWN**（退出 1）。⛔ 报出 `n/N examined`（§0.24.0）；⛔ override 点名扫描找不到的声明即 FATAL（静默无效的登记和生效了一模一样）。
+ * **冷头点名（M(n) 关账，扁平产物）**：scope-hoisted bundle 没有模块边界，点名单位是深度 0 声明。逐条判 cited / override(collapsed·omitted·ported) / named / UNKNOWN，报 `n/N examined`；范围 override 可带 `match` 只收编译期常量；找不到的 override 即 FATAL。手写移植 + 冻结快照当 port/ 的形态里，它就是 mirror→port 那一段唯一的机器裁判
+ * `node cold-audit-decls.mjs --pretty mirror/_pretty/main.pretty.js --ranges a-b,… --port src [--overrides docs/cold-audit-overrides.json] [--slack 1]`
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";

@@ -57,6 +57,12 @@
  *      Log.enable is blind to them and reports a false CLEAN)
  *   -> shopifydesign-rebuild (--no-external assertion for the offline gate,
  *      --walk full-page scroll walk).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`probe.mjs`）
+ * CDP 无头探针（console/异常/网络 CLEAN 判定，退出码进 CI；`--no-external` 断言零外联、`--walk` 全滚动走查）
+ * CDP 无头探针：console/异常/网络采集 + Log 域监听（SRI 拦截盲区修复）、`--eval/--evalAfter/--shot/--mobile`、CLEAN 判定退出码进 CI。`--no-external` 把"任何离开本服务 origin 的请求"记为失败（断网门要求的零外联，此前无人断言）；`--walk N` 全页滚动走查（`--scroll` 只跳单点，跳过的场景根本不挂载）。调试端口按 side 分配（side 从目标 URL 的端口自动反解，可用 `--side` 覆盖），attach 只认自己的 sentinel 页；外联清单里凡是本工具链的回环端口都会标注归属（`1x 127.0.0.1:25001 <- serve.mjs side MIRROR`），`--expect-side` 可断言对面服务确实是那一侧。浏览器生命周期走 `lib/chrome.mjs`（进程组收割 + 启动前孤儿自检）；`--shot` 支持 `--format jpeg --quality N`，撞上 CDP 载荷硬顶时响亮失败并给出降级清单（详见上文两节）。
+ * 逐参数走 argv，旗标可以在 URL 前面
+ * `node probe.mjs http://127.0.0.1:25001/ --shot out.png --walk 24 --no-external`；大视口截图 `--shot out.jpg --format jpeg --quality 92`
  */
 import { writeFile } from 'node:fs/promises';
 import {

@@ -33,6 +33,11 @@
  * Zero-dependency: the tokenizer is a PINNED npx spawn, never an import.
  *
  *   node scripts/verify-module-map.mjs --closure docs/app-closure.json --src src [--map docs/module-map.json]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-module-map.mjs`）
+ * **M(n+1) 等价门（模块化产物）**：一模块一文件，且每个文件与打包器字节 **token 级一致**（只允许包装重命名那组一一映射）。⛔ 用文本把重命名 undo 回去比对会失败——`module.exports` 里的 `exports` 是属性名；**门用捷径就会测到自己的捷径**。⛔ 门也不许重跑重命名来比对
+ * **模块树对账门（模块容器产物）**：closure 里每个模块在 `src/modules/` 恰好一个文件且 token-exact——与 `verify-symbols` 互为两种产物形状（平铺 vs 容器）的同一道门。模块名可带子目录
+ * `node verify-module-map.mjs [--src port]`
  */
 import { readFile, readdir, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";

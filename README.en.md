@@ -1,7 +1,10 @@
 # website-rebuild-skill
 
+<a href="https://trendshift.io/repositories/128679" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/128679/daily?language=JavaScript" alt="#3 JavaScript Repository Of The Day | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/128679" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/128679/daily" alt="#14 Repository Of The Day | Trendshift" width="250" height="55"/></a>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.13-blue.svg)](CHANGELOG.md)
+[![npm](https://img.shields.io/npm/v/website-rebuild-skill.svg)](https://www.npmjs.com/package/website-rebuild-skill)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-brightgreen.svg)](https://agentskills.io/)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-339933.svg)](#quick-start)
 
@@ -75,6 +78,20 @@ In each image the **left half is the read-only mirror of the source site, the ri
 | `npx` | a few stages spawn version-pinned external tools (never import them) |
 
 ### Install
+
+Either way installs the same directory.
+
+**Option 1 — npx (one command, no clone needed)**
+
+```bash
+npx website-rebuild-skill                      # -> ~/.claude/skills/website-rebuild
+npx website-rebuild-skill --project            # -> ./.claude/skills/website-rebuild
+npx website-rebuild-skill --dir <skills dir>   # other runtimes; `website-rebuild` is appended
+```
+
+The installer **only copies files** — it never runs the skill, never opens a browser, never fetches anything, and has no dependencies of its own. Every copied file is verified against the source by sha256 before it reports success; an existing install is reported by version and left alone unless you pass `--force`. Use `--dry-run` to see what it would write.
+
+**Option 2 — copy by hand (you already cloned the repo)**
 
 Put the entire `skills/website-rebuild/` directory into your agent's skills directory. For Claude Code:
 
@@ -233,8 +250,8 @@ skills/website-rebuild/    # the skill itself, laid out per the agentskills.io s
 ├── scripts/               #   zero-dependency Node stage scripts and gates + lib/ shared modules
 │                          #     every stage before sourcification lives here
 └── tools/                 #   sourcification-stage reconstruction tools; devDependencies allowed
-selftest/                  # repo smoke tests (npm test; not distributed with the skill)
-.github/workflows/         # CI: npm test on push/PR
+selftest/                  # repo self-tests: npm test (offline) + npm run test:browser (real Chrome); not distributed with the skill
+.github/workflows/         # CI: both lanes on push/PR; a tag publishes to npm
 CHANGELOG.md               # changelog
 README.md                  # Chinese README
 README.en.md               # this file
@@ -261,7 +278,7 @@ Before anything goes public, per-asset copyright **forensics** must be completed
 
 Versions advance with real rebuild projects: every feature and fix shipped was first validated on at least one complete project.
 
-Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.19** — war stories externalized: all 24 docs split into rules and evidence, the stories moved verbatim into `references/case-studies/` (outside every mandatory set, read only when you ask why a rule exists), each rule keeping a pointer and its 【codename】 provenance; zero loss is proven sentence-by-sentence by `check-cases.mjs` (6,800+ sentences, all `missing 0`, and it caught two gaps left by interrupted workers); the mandatory set drops from 126–178K to 113–159K tokens; selftest 140→143 (three case-study invariants: parent exists, headings match, no pointer into thin air).
+Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.22** — the browser lane. "Pixel-identical" rests on pixelcompare's 0.00 and CLEAN on probe; those gates exist only with a real Chrome behind them, had zero negative tests, and 0.3.18 had swapped the whole CDP floor under them. `npm run test:browser` now launches headless Chrome against loopback flat-colour grid fixtures and drives the verdicts: 0.00 / one recoloured cell reds / same URL exits 3 / blank frames exit 5 / `--self` band / 404 / console.error / zero-outbound / wrong side exits 3 — 16 checks; mutating three verdicts caught 5. lenprefix's "nothing to check" now splits into empty input (FATAL 5) and not-applicable (SKIPPED, never PASS). Offline lane 200.
 
 ## Contributing
 
@@ -269,7 +286,7 @@ Issues and PRs welcome. Two conventions that differ from most projects:
 
 - **Every feature and fix needs a measured origin** — this repo's entire version history comes from problems hit in real rebuild projects; please state which target validated your PR;
 - **`scripts/` stays zero-dependency** (no imports beyond `node:`, gates may not import producers) — `scripts/verify-zerodep.mjs` enforces this in review;
-- Run **`npm test`** before committing (seconds-fast smoke: syntax / zero-dep / shared-lib lesson fixtures / miniature end-to-end mirror) — CI runs the same suite on every PR.
+- Run **`npm test`**, and **`npm run test:browser`** (real Chrome, ~30 s) when a browser gate changed — probe / pixelcompare / serve before committing (seconds-fast smoke: syntax / zero-dep / shared-lib lesson fixtures / miniature end-to-end mirror) — CI runs the same suite on every PR.
 
 ## License
 

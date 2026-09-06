@@ -24,6 +24,11 @@
  *   "$S<name>" symbol | "$undefined" | "$D<date>" | "$n<bigint>" | "$$" escape
  *
  * Usage: node scripts/flight-decode.mjs --mirror mirror --out docs/flight
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`flight-decode.mjs`）
+ * **C1 的坐标系**：把每页 `self.__next_f.push` 流解成模块引用表（I 行导出名=白送的 tier-1 命名证据）、HL 预载、已解引用的元素树 + JSX 式 outline。T 行按声明字节数走；`:HL` 空 id 行不许断链
+ * C1 的坐标系：把每页 `self.__next_f.push` 流解成模块引用表（I 行导出名 = tier-1 命名证据）、HL 预载、已解引用元素树 + JSX 式 outline。T 行按声明字节数走；`:HL` 空 id 行不断链
+ * `node flight-decode.mjs --mirror mirror --out docs/flight`
  */
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";

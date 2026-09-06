@@ -63,6 +63,12 @@
 // Zero npm dependencies: raw CDP over Node's built-in WebSocket (Node 22+).
 // Adapted from samsyninja-rebuild/scripts/pixelcompare.mjs (64x40 grid +
 // metric.json). For per-pixel byte gates + diff heatmaps see side-by-side.mjs.
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`pixelcompare.mjs`、`scripts/pixelcompare.mjs` 的 `--freeze-css`）
+// 量化像素对拍（粗网格相似度 + metric 输出）。⭐ **状态对齐协议**：`--ready <表达式>` + `--chunk 1` + `--after-ready N`——两侧各自 READY 后再泵 N 帧，分块粒度即对齐分辨率（darkroom /about、/work 两处 UNCLASSIFIED 残差由此归零，determinism §7）。**视口 ≳ 1500×900 时 PNG 过不了 CDP 载荷硬顶**，改 `--format jpeg --quality 92`。**产出前先过非空帧前置条件**——两张空帧对拍会报 `meanAbsDiff 0 / 相似度 100`，与完美结果同形（实测：冻结把引擎停在首帧之前，三条路由全报 0，而那是 201 色 99.5% 纯黑）；`--pump dt,frames` 是 probe-shim 的一等驱动入口，且**与真实时间交错地泵**——冻结页的启动仍在墙钟上等资产，settle 之后一次性泵完会让引擎永远拿不到"资产已到达"的那一帧（`determinism.md` §2.9.1）。`--self` 是**自比带宽的合法通道**（§1.3.2 要求的那次测量按定义是一侧与自己比，会被跨侧假绿守卫拦下）——产物标 `kind:"self-band"`，且 `--max-mean` 对它失效：带宽是分类的**输入**，不是判决
+// ⛔ **冻 JS 时钟冻不住 CSS 动画**——`animation` 跑在浏览器动画时间线上，不经过 JS。症状是**同侧对照比跨侧还大**且最差格相同。该旗标把所有动画 `paused` + 固定负延迟钉在同一相位（⚠ 它改变被渲染内容，这正是目的：两侧定格在同一位置）。
+// 双服务器 A/B 截图 + 64×40 网格量化（适合活体场景）+ 并排合成图 + metric.json；`--max-mean` 可作门。**开拍前先证明 A/B 是两个进程**：同 origin 或两个 URL 拿到同一个 `serve.mjs` identity token 一律退 3（否则那份完美报告测的是同一侧），标签与服务自报的 side 不符则告警。浏览器生命周期走 `lib/chrome.mjs`——**这里的进程泄漏会直接把自比带宽抬高、把门调松**。`--format jpeg --quality N` 是撞上 CDP 载荷硬顶时的规避（默认 PNG），截图/指标/合成三步失败都点名原因并退 4，不再无声超时。⭐ v0.3.15 **状态分两种**（determinism §7.1）：泵到的状态用 `--ready`/`--after-ready N`（状态相对再泵 N 帧）；**等到的状态**（GLB 在 worker 里解码、纹理到达）用 `--hold <expr> --hold-after N --hold-grace ms`——先泵 N 帧让页面在泵的世界里发出请求，真实时间等到达（虚拟钟钉住）+ grace，再两侧同样绝对泵完。raycastkbd 25% 检查点：绝对泵 1/3 概率 2.91（未到达）、`--after-ready` 恒 1.7（相位错开）、泵前 hold 60s 超时、`--hold-after 30 --hold-grace 1500` 归零。v0.3.16：同一 `--out` 里混用 `--self` 与跨侧直接 FATAL（exit 2），metric.json 的 `kind` 不再被旧值覆盖
+// `node pixelcompare.mjs --a http://127.0.0.1:25002/ --b http://127.0.0.1:25001/ --name home`；1728×1080 加 `--format jpeg --quality 92`
 
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';

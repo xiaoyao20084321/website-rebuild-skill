@@ -32,6 +32,11 @@
  *        [--allow-external vimeo.com,i.vimeocdn.com]
  *        [--out docs/sweep.tsv] [--cdp-port N] [--width 1280] [--height 800]
  *        [--routes /,/about] [--allow-errors <re>] [--allow-failures <re>]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`sweep-routes.mjs`）
+ * **渲染广度门:全路由,一个浏览器**。
+ * 逐路由记 page errors / 请求失败 / 外联,`--interact` 跑交互钩子(入场点击等 load 到不了的状态),`--eval` 逐路由采集(如音频池普查);`--allow-external` 放行已登记的 EMBED 主机——⭐ 允许主机上的 4xx 是它的离域行为不判红(域名锁 Vimeo 实测),自家 origin 的 4xx 照红。分工:本门管广度(每路由一状态),probe 管深度(单路由走查/截图/长观察)
+ * `node sweep-routes.mjs --base <port> --pages docs/pages.json --interact '<js>' --eval '<js>' --allow-external vimeo.com --out docs/sweep.tsv`
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

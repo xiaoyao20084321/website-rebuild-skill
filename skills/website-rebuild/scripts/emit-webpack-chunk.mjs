@@ -15,6 +15,9 @@
 //   readable-source.md §3.0.6 的拼接式分解语义：字节等价成立时全部运行时门的裁决免费转移。
 //
 //   node scripts/emit-webpack-chunk.mjs --in <pretty.js> --map <lines.json> --out <gen.js> --parts <dir> [--raw <min.js> --raw-bounds <bounds.json>] [--check]
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21）
+// **多 chunk webpack 站的逐字再发射**：按 module-map 边界把 `_pretty` chunk 切成逐模块部件（含首尾非模块部件），按源站容器形态 `push([[ids],{…}],runtime)` 原样拼回，解析交给镜像里源站自己的 webpack runtime——Turbopack "再发射进 TURBOPACK" 的 webpack 同构物；`--check` 拼接门逐字节；`--raw` 对 token 不等的模块代入压缩原件精确子串
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "./lib/cli.mjs";

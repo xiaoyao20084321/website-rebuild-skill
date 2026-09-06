@@ -16,6 +16,10 @@
  * closure gate must skip them, make-standalone must not ship them. LEDGER_FILES
  * is that list, once — verify-mirror and make-standalone used to carry their own
  * and they had drifted.
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/ledger.mjs`）
+ * **镜像三本账的唯一读写实现**：manifest / inventory.tsv / redirects.tsv 的格式、排序、去重、追加，`writeLedgers` 一次写三本；`LEDGER_FILES` + `isBookkeeping` 是"哪些文件不是镜像"的唯一清单（此前 verify-mirror 与 make-standalone 各存一份且已漂移）
+ * `import { readManifest, writeLedgers, appendInventory, isBookkeeping } from "./lib/ledger.mjs"`
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";

@@ -26,6 +26,11 @@
  * be skipped for technical reasons only, never legal ones).
  *
  *   node scripts/verify-standalone.mjs [--src src] [--full] [--keep]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-standalone.mjs`）
+ * **自包含门**：把 `src/` 复制到临时目录 → 断网 → 安装 → 构建 → 跑 CLEAN 与零外联。⛔ **必须复制出去跑**——原地跑会命中项目根的 `node_modules`/`mirror/`/根 `package.json`，而这三样恰好是自包含要证伪的东西
+ * **自足副本门**：M(n+1) 的契约是"src/ 拷到任何地方、离线安装、跑起来"——这在仓内不可测，所以真拷贝到仓外、真装、真跑、真探针
+ * `node verify-standalone.mjs`
  */
 import { readFile, readdir, stat, cp, mkdtemp, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";

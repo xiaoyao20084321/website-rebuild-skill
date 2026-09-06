@@ -62,6 +62,10 @@
 // next to the bytes it produced and the four scripts CANNOT drift apart. A
 // mirror written under one policy and served under another is itself a defect —
 // verify-mirror.mjs reports it as MAPPING DRIFT.
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/urlpath.mjs`）
+// **唯一的 url→本地路径映射**，`mirror-site` / `netcapture` / `serve` / `verify-mirror` 四方共用（三方各存一份 `localPathFor()` 本身就是 bug 源）。**查询感知**：查询串排序后编成文件名后缀并插在扩展名前（`x.jpg?v=1&width=600` → `x@@v=1&width=600.jpg`），所以 `?width=320/600/1200` 是三个文件而不是一个；含文件系统敏感字符或过长的降级为 `@@h<sha1-12>`（**任何**敏感字符都降级，而不是替换成 `_`——替换会让 `?q=a/b` 与 `?q=a?b` 撞名，等于把要防的坍缩又造回来）。**策略可配置、默认保守**：默认每个参数都进键（宁可多存不可坍缩），确认某参数不改字节后再 `--query-ignore v,cb` 或 `--query-only width,height`；有效策略由爬虫写进 `<mirror>/urlpath-policy.json`，其余三方读它，四方不可能漂
+// `import { localRelPath, serveCandidates, loadPolicy } from "./lib/urlpath.mjs"`
 
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";

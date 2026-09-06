@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // check-cases.mjs — the zero-loss guard for moving war stories out of a reference doc.
 //
-//   node selftest/check-cases.mjs <name>            # e.g. mirroring, or SKILL
+//   node selftest/check-cases.mjs <name>            # e.g. mirroring, or SKILL, or scripts
 //
 // Baseline = the doc as committed at HEAD (git show). Every sentence of the
 // baseline (≥ 10 chars, headings excluded) must appear VERBATIM in either the
 // rewritten doc or its case-studies companion. Prints the missing sentences and
 // exits 1 if any. Also prints sizes so the split can be judged.
+//
+// `scripts` (v0.3.21) has a THIRD legal destination: a script's own header
+// comment — exactly what `--help` prints (lib/cli.mjs headerOf), so the check
+// reads it through the same function. A spec sentence that left the README
+// must be answerable by `node scripts/<x>.mjs --help`.
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -16,8 +21,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SK = path.join(ROOT, "skills/website-rebuild");
 const name = process.argv[2];
 if (!name) { console.error("usage: check-cases.mjs <doc-name-without-.md | SKILL>"); process.exit(2); }
-const isSkill = name === "SKILL";
-const docRel = isSkill ? "skills/website-rebuild/SKILL.md" : `skills/website-rebuild/references/${name}.md`;
+const isSkill = name === "SKILL", isScripts = name === "scripts";
+const docRel = isSkill ? "skills/website-rebuild/SKILL.md" : isScripts ? "skills/website-rebuild/scripts/README.md" : `skills/website-rebuild/references/${name}.md`;
 const caseRel = `skills/website-rebuild/references/case-studies/${isSkill ? "skill" : name}.md`;
 
 const baseline = execFileSync("git", ["show", `HEAD:${docRel}`], { cwd: ROOT, encoding: "utf8" });
@@ -38,7 +43,14 @@ const sentences = (text) => {
   }
   return out;
 };
-const hay = norm(slim) + "\n" + norm(cases);
+let headers = "";
+if (isScripts) {
+  const { readdirSync } = await import("node:fs");
+  const { headerOf } = await import(path.join(SK, "scripts/lib/cli.mjs"));
+  for (const d of ["scripts", "scripts/lib", "tools"])
+    for (const f of readdirSync(path.join(SK, d))) if (/\.(mjs|js)$/.test(f)) headers += headerOf(path.join(SK, d, f)) + "\n";
+}
+const hay = norm(slim) + "\n" + norm(cases) + "\n" + norm(headers);
 const missing = [];
 const seen = new Set();
 for (const s of sentences(baseline)) {
@@ -47,7 +59,7 @@ for (const s of sentences(baseline)) {
   if (!hay.includes(s)) missing.push(s);
 }
 const kb = (s) => (Buffer.byteLength(s) / 1024).toFixed(1);
-console.log(`${name}: baseline ${kb(baseline)} KB → doc ${kb(slim)} KB + cases ${kb(cases)} KB   sentences ${seen.size}, missing ${missing.length}`);
+console.log(`${name}: baseline ${kb(baseline)} KB → doc ${kb(slim)} KB + cases ${kb(cases)} KB${isScripts ? ` + headers ${kb(headers)} KB` : ""}   sentences ${seen.size}, missing ${missing.length}`);
 for (const m of missing.slice(0, 40)) console.log(`  MISSING: ${m.slice(0, 140)}`);
 if (missing.length > 40) console.log(`  … ${missing.length - 40} more`);
 process.exit(missing.length ? 1 : 0);

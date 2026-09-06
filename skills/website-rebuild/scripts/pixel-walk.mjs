@@ -23,6 +23,11 @@
  *                               [--pump 16.7,120] [--max-mean 1.0] [--self]
  *                               [--out docs/pixelcompare] [--format jpeg] [--quality 92] [--rescroll-ms 1500]
  *                               [--settle ms] [--ready expr] [--hold expr] [--hold-grace ms] [--hold-after N]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`pixel-walk.mjs`）
+ * **检查点巡航**：在 N 个滚动位置各跑一次像素门。⛔ **滚两次**（`load` 时 + 虚拟时间 +1.5s 再一次）——页面在自己的 init 里重置滚动会**吃掉** load 时那一次，于是所有检查点都拍页顶而两侧一致地全绿。⛔ **重复帧要逐格报出来**：全局 distinct 计数在「9 格里 3 格重复」时照样通过。⛔ **单个 0.00 是这套工具能产出的最误导的数字**——它是一帧，通常是页面顶部的头两秒。⚠ 先用 `--self` 在同样的检查点上测带宽：实测未冻结时自比 4.6–5.0、跨侧 2.6–3.4，**差异整个落在噪声里**；冻结后两者都归零。⭐ **状态分两种**（v0.3.15，determinism §7.1）：泵到的（挂载相位）用 `--ready/--after-ready`，**等到的**（GLB 在 worker 里解码）用 `--hold <expr> --hold-after N --hold-grace ms`——先泵 N 帧让页面开口要，真实时间等到达，再两侧同样绝对泵完；用错半边一个是 1/3 概率拍到未到达，一个是恒定的相位差
+ * **N 档滚动像素门**：⛔ 单个 0.00 是本工具链最误导的数字——一帧、通常是页顶、拍在头几秒。驱动两侧到同一滚动分数再拍、重复 N 档；滚动器自动探测（文档不滚就找内层 overflow 容器）、落点实测回报（平滑滚动库会改写你设的值）、**重复帧点名**（"9 档里 2 档是同一帧"必须被解释）。`--pump` 走确定性 shim（⚠ A/B URL 须自带 `?__probe`），`--self` 采同侧带宽——**跨侧数字只有对着带宽才有意义**。v0.3.15：`--ready`/`--hold`/`--hold-after`/`--hold-grace` 透传给 pixelcompare，并**逐行转发**它的对齐诊断（"ready after N" / "--hold satisfied after N"）——此前被吞掉，READY 没触发的走查与对齐了的走查在输出上无法区分
+ * `node pixel-walk.mjs --a "<port>/?__probe" --b "<mirror>/?__probe" --steps 9 --pump 16.7,1500`；先 `--self` 采带宽
  */
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";

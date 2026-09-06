@@ -6,6 +6,9 @@
 // 全绿。凡把 `_pretty` 排版字节当交付物（再发射、切片拼接）的路线，token 流等价是
 // 必需的门，不是可选的。本库被 beautify-bundle（产出后自查）与 verify-tokens（门）
 // 共用；门不 import 生产者，两者只共享这份读法。
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21）
+// token 流读法（acorn@8.14.0 钉死 spawn）+ 首分歧定位；beautify-bundle 自查与 verify-tokens 门共用（门不 import 生产者，只共享读法）
 import { spawnSync } from "node:child_process";
 
 export const ACORN_VERSION = "8.14.0";

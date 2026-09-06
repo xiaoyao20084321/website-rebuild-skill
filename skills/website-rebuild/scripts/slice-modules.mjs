@@ -19,6 +19,11 @@
  *                                [--in mirror/_pretty/main.built.js]
  *                                [--out port/_gen/tween.gen.js] [--check]
  *                                [--format esm|classic --entry <id>] [--packer auto|webpack|turbopack]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`slice-modules.mjs`）
+ * **按模块 id 逐字切片**：边界由打包器给定，所以切片表就是一串 id，且工具能自校（`--check` 重切须字节一致）。转写的 webpack 运行时在文件头登记为偏差。⛔ **容器不是整个文件**（v0.3.15）：Turbopack chunk 容器外的字节（Sentry `_debugIds` 前奏、`//# debugId` 尾注）逐字带走，否则 `verify-tokens` 对每个 chunk 恒差 87 token 而无处登记（raycastkbd 0/54 → 61/61）
+ * 按模块 id 逐字切片；`--check` 重切须字节一致。转写的 webpack 运行时在文件头登记为偏差。⛔ **Turbopack 容器外的字节也逐字带走**（v0.3.15）：每个 chunk 开头的 Sentry `_debugIds` 前奏与结尾的 `//# debugId` 尾注是浏览器执行过的字节，丢掉它们 = token 门 0/54 红且无处登记（raycastkbd 285 B/87 token 每 chunk）；gen 头写明 prologue/epilogue 字符数与**完整**再生成命令行（`--in/--map/--closure/--out`——此前只写 `--closure`，照抄即 ENOENT）
+ * `node scripts/slice-modules.mjs --in mirror/_pretty/X.js --map docs/survey/X.json --closure docs/closures/X.json --out port/_gen/X.gen.js`
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";

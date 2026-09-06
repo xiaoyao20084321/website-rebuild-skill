@@ -11,6 +11,9 @@
 // 双侧：逐路由深比较（键序敏感、值逐字），差异按 JSON 路径列出；--normalize 只对登记过的
 //       字段名（如 ISR 纪元）删除后比较——⛔ Sanity `_key`/`_rev` 是化石，默认不 normalize。
 // 两侧同为非 200（源站对该路由本就无 data 载荷）视为一致。不 import 任何生产者。
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21）
+// **pages router 载荷门**：`__NEXT_DATA__` 与 `/_next/data/<buildId>/<route>.json` 单侧自洽 + 双侧深比较（键序敏感、值逐字，两侧同 4xx/5xx 视为一致），`--a/--b` 可给伺服地址或镜像目录；`--normalize` 只删登记过的纪元字段，⛔ Sanity `_key` 是化石不 normalize。verify-payload 只认 nuxt/flight/sveltekit，这是它的空白
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cli } from "./lib/cli.mjs";

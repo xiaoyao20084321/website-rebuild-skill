@@ -16,6 +16,11 @@
 //
 // New thin wrapper written for the website-rebuild skill: the six projects
 // carried this as a documented command + README convention, not a script.
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`beautify-bundle.mjs`）
+// js-beautify@1.15.1 钉死展开 bundle 到 `_pretty/` 并生成再生成说明。⛔ **排版后自查 token 流**（`lib/tokens.mjs`）：js-beautify 会改变嵌套模板字面量内容而所有渲染门照绿（14islands F4）——不等的文件在账本标 `DIFFER@n`、退出码 1，只能当坐标不能当交付字节；`[slug]` 类含 glob 字符的文件名喂无括号副本（F5：CLI 对 -f 做 glob，静默零产出）；输出 === 压缩输入直接 FAIL。⛔ **撞名响亮告警 + 单射断言**——两个不同目录下的 `main.built.js` 曾静默互相覆盖，而 `_pretty/` 是全项目唯一溯源坐标系，覆盖之后每个行号都指向错误的文件
+// 薄封装：钉死 `js-beautify@1.15.1` 展开 bundle 到 `mirror/_pretty/` 并自动生成含再生成命令的 `_pretty/README.md`（版本漂移作废行号坐标系）
+// `node beautify-bundle.mjs mirror/assets/cdn.x.com/bundle.js`
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

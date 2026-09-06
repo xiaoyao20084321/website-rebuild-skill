@@ -36,6 +36,11 @@
  * browser, and the alternative — reimplementing the serialiser's argument
  * substitution — would be a second implementation of somebody else's format,
  * which drifts (verification-gates.md §2.1.1).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-payload.mjs`）
+ * **SSG payload 门**：把内联序列化数据块（Nuxt2 `window.__NUXT__` / Nuxt3 `__NUXT_DATA__` / **React flight `self.__next_f`**）**求值展开**再按结构对拍。字节门在这里不够用——payload 是一段"输出数据的程序"（参数去重、`\u002F` 转义），两份可以字节不同而语义相同，也可以字节相近而语义不同；且服务层要**改写它内部**的 URL。
+ * **SSG 载荷门**：载荷是程序不是文本（去重进函数实参、`</script>` 转义），两个字节不同的载荷可以语义相同，反之亦然——所以**求值展开后按叶路径比对**，差异必须限于已登记引用改写。认 Nuxt 2（IIFE）/ Nuxt 3（`__NUXT_DATA__` devalue，**外置 `_payload.json` 优先**）等形状；`--allow-absent` 供**无数据岛**的纯标记 SSG 声明豁免（两侧一致缺席才放行，单侧有岛照样红）
+ * `node verify-payload.mjs --a <mirror> --b <port> --routes /,/x [--allow-absent]`
  */
 import { cli } from "./lib/cli.mjs";
 

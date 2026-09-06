@@ -18,6 +18,11 @@
  * one step that lacked it.
  *
  *   node scripts/verify-fresh.mjs [--entry src/index.js] [--dist dist/site.js] [--served site/_next/static/chunks/site.port.js] [--esbuild node_modules/.bin/esbuild]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-fresh.mjs`）
+ * **新鲜度门**：`src/` → `dist/` → `site/` 是否同步。⛔ 链条上**只要有一步缺 `--check`，整条链的绿灯就可能过期**——过期的产物照样伺服，下游门照样全绿（它们比的是产物对镜像，不是产物对源码）。⛔ **时间戳不是判据**：实测一次 mtime 显示过期而重建字节完全相同。⚠ 必须同时查「产物是不是源码现在构建出来的」与「伺服的是不是那一份」——只查前者，缺口只是往下游挪一步
+ * **生成物新鲜度门**：盘上的构建产物是否等于生成器**现在**会产出的东西。管线里每个生成器都有 `--check`，唯独打包一步没有——陈旧的 dist/ 照常伺服、下游门全绿，这道门补上那个洞
+ * `node verify-fresh.mjs`
  */
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";

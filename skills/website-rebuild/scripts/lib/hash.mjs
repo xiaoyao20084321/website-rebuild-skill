@@ -6,6 +6,10 @@
  * wrong; the point is that a ledger row, an inventory line and a verify-mirror
  * check must agree on what "the sha256 of this file" means, and one spelling
  * cannot disagree with itself (verification-gates.md §2.1.1).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/hash.mjs`）
+ * **唯一的 sha256 拼写**：`sha256(buf)` / `sha256Short(buf, n)` / `sha256File(path)`（流式）。
+ * `import { sha256, sha256File } from "./lib/hash.mjs"`
  */
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";

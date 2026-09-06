@@ -56,6 +56,11 @@
 //   -> racingshop-rebuild (HLS/DASH ladder MIME types)
 //   -> shopifydesign-rebuild (.mov MIME, --stub-ext-hosts for hosts that are
 //      rewritten into /ext/ but deliberately not mirrored).
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`serve.mjs`）
+// 零依赖静态服务器（MIME/Range/服务层改写/重定向回放），兼任源站参照服。`--rewrite FROM::TO` 是**登记式字面量替换**，为的是一类本地化触及不到的东西——**源程序按自己的域名分支**（`location.hostname=="x.com" && (CDN=...)`，镜像不在那个域名上于是整个子系统走空路径）；**首次命中打印**，因为沉默与生效此前无法区分。`--fallback-root` 让复刻侧只放产出、资产全部从只读镜像读（`asset-management.md` 的不复制策略）——⭐ v0.3.15 起是**回落链** `--fallback-root mirror-negotiated,mirror`，协商变体的独立记账树压在只读镜像之上、两侧同链；⛔ **桩主机的 DSN 保持是 DSN**：`https://<key>@oNNN.ingest.us.sentry.io/<id>` 改写成 `http://<key>@127.0.0.1:<port>/ext/<host>/<id>`，SDK 正常初始化、信封打进桩（此前改成裸路径 → 两侧 console `Invalid Sentry Dsn`，CLEAN 门红而无静态门能见）；**未知旗标响亮失败**——被静默忽略的旗标是一次没人知道的降级
+// 零依赖静态服务器：MIME 补全（含 HLS 阶梯与 `.mov`）、Range、redirects.tsv 重定向回放（FROM 写绝对 URL 或裸路径都能命中）、`/ext/<host>/` 服务层改写（镜像磁盘神圣不改）、`--stub-ext-hosts` 把"改写进 `/ext/` 但故意不镜像"的遥测 host 回 JS stub（否则要么真外联、要么 404）、`?__probe` 注入 probe-shim、404.html 回放。**`--side mirror\|rebuild` 必填**（除非显式给 `--port`/`PORT`）：它决定端口（…1 镜像 / …2 复刻）并写进每个响应的 `x-wrs-identity`，端口被占直接退 3 并点名占用方。三条镜像层修复：① **查询感知取文件**（`lib/urlpath.mjs`，读镜像里的 `urlpath-policy.json`）——按 pathname 取文件会拿一个变体回答所有 `?width=`，页面照渲染，零 404 门在错镜像上变绿；② **host 改写覆盖四种写法**——普通 / 协议相对 / JSON 转义（`https:\/\/host\/` 与 `\/\/host\/`）/ **裸主机常量**（`"https://otlp.example.com"` 后面代码自己拼路径）；新增 `--origin-host` 把源站对自己的绝对/协议相对自引用改写成根相对（否则离线镜像会向线上真站要盘上已有的图）；③ **回放前跳过本地化后自指的重定向**（源站常有 http→https 同路径条目，两侧本地化后同路径 → `ERR_TOO_MANY_REDIRECTS`，把真实在盘的资产打死）。v0.3.15（raycastkbd）两条：④ **`--fallback-root` 是回落链**（`--fallback-root mirror-negotiated,mirror`，左到右第一个有文件的 root 应答——协商变体的独立记账树压在只读镜像之上，两侧同链）；⑤ **桩主机的 DSN 保持是 DSN**：`https://<key>@oNNN.ingest.us.sentry.io/<id>` 改写成 `http://<key>@127.0.0.1:<port>/ext/<host>/<id>`（此前 userinfo 归一化后再本地化成裸路径，Sentry `new Dsn()` 拒收 → 两侧 console `Invalid Sentry Dsn`，CLEAN 门红而无静态门能见；现在 SDK 按源站那样初始化，信封打进 `/ext/<host>/api/<id>/envelope/` 的桩）。
+// `node serve.mjs --side mirror --root mirror --origin-host example.com`；复刻侧 `node serve.mjs --side rebuild --root dist`；有遥测时加 `--stub-ext-hosts www.googletagmanager.com,www.clarity.ms`
 
 import http from "node:http";
 import { rewriteFlight, hasFlight } from "./lib/flight.mjs";

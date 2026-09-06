@@ -1,28 +1,32 @@
 #!/usr/bin/env node
-/**
- * module-map.mjs — enumerate a packed bundle's modules as the porting units.
- *
- * reverse-engineering.md's layer map scans TOP-LEVEL DECLARATIONS, because the
- * four projects before this one were flat concatenations: hundreds of
- * declarations sharing one scope, and the whole problem was deciding where one
- * ended. A packed bundle has ZERO top-level declarations — it is
- * `!function(modules){runtime}([…])` — and the boundaries the previous tool had
- * to reconstruct are simply present.
- *
- * ⭐ ZERO-DEPENDENCY, and that is not incidental. Everything before the source
- * stage runs with nothing installed; a rebuild project acquires devDependencies
- * only at M(n+1). The first version of this file imported @babel/* and sat in
- * scripts/ for eight releases — three lines below the paragraph forbidding it.
- *
- * It gets a real tokenizer anyway, via the same pinned-npx pattern
- * beautify-bundle.mjs uses: spawn `acorn --tokenize`, read the token stream,
- * never import anything. ⛔ Do NOT hand-roll the lexer instead. That was tried
- * elsewhere in this skill and a regex literal containing a quote desynced it by
- * 16,177 lines (F27). Brace matching over a real token stream is exact; brace
- * matching over text is a guess about strings, regexes and comments.
- *
- *   node scripts/module-map.mjs [--in mirror/_pretty/main.built.js] [--out docs/module-map.json]
- */
+//
+// module-map.mjs — enumerate a packed bundle's modules as the porting units.
+//
+// reverse-engineering.md's layer map scans TOP-LEVEL DECLARATIONS, because the
+// four projects before this one were flat concatenations: hundreds of
+// declarations sharing one scope, and the whole problem was deciding where one
+// ended. A packed bundle has ZERO top-level declarations — it is
+// `!function(modules){runtime}([…])` — and the boundaries the previous tool had
+// to reconstruct are simply present.
+//
+// ⭐ ZERO-DEPENDENCY, and that is not incidental. Everything before the source
+// stage runs with nothing installed; a rebuild project acquires devDependencies
+// only at M(n+1). The first version of this file imported @babel/* and sat in
+// scripts/ for eight releases — three lines below the paragraph forbidding it.
+//
+// It gets a real tokenizer anyway, via the same pinned-npx pattern
+// beautify-bundle.mjs uses: spawn `acorn --tokenize`, read the token stream,
+// never import anything. ⛔ Do NOT hand-roll the lexer instead. That was tried
+// elsewhere in this skill and a regex literal containing a quote desynced it by
+// 16,177 lines (F27). Brace matching over a real token stream is exact; brace
+// matching over text is a guess about strings, regexes and comments.
+//
+//   node scripts/module-map.mjs [--in mirror/_pretty/main.built.js] [--out docs/module-map.json]
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`module-map.mjs`）
+// **模块化 bundle 的分层表**：spawn 钉死的 `acorn --tokenize`（零依赖），逐模块给出行区间、`requires`、导出名。**认两种容器**：webpack 对象容器（⭐ v0.3.10 起以 `webpackChunk*/webpackJsonp` 的 `push([[ids],{…}])` **正签名**定位——three 的 400+ 导出映射曾以"属性更多"赢过真容器，把 256 模块的 chunk 报成 406 个 3 行模块；对象/数组容器**模块行数 > 文件行数一律 FATAL**）与 **Turbopack 扁平列表**（后者把导出名直接写在容器里，M(n+1) 命名因此几乎全是 tier-1 证据；⛔ v0.3.12：React Compiler 下整个实现内联在 `e.s([name, 0, function…], id)` 里——扫描进入声明体，导出名只在元素起始位读，否则体内的 `.A/.i` 边全丢）。⛔ 认不出容器即 FATAL；⛔⛔ **认出来的还必须解释得了这个文件**——行覆盖率 <50%、或依赖边不足 require 调用数的 25%，一律 FATAL：读错容器时工具会「成功」（实测对一个真有 20 个工厂的 chunk 报了 2 个模块）。⛔ **容器可以重复定义同一个 id**——实测 597 条属性只有 569 个不同模块，且其中 4 条被遮蔽的定义**实现不同**；语义是**对象字面量后者胜出**，工具必须去重并报告，否则每份文档记的模块数都是错的，而下游拿到哪一份取决于迭代顺序
+// 模块化 bundle 的分层表：spawn 钉死 `acorn@8.14.0 --tokenize`（**零依赖：外挂，从不 import**），逐模块给出行区间、`requires`、导出名。⛔ 认不出容器即 FATAL。⛔ 容器可以重复定义同一个 id——按对象字面量语义**后者胜出**，去重并报告被遮蔽的份数与其中实现不同的那些
+// `node scripts/module-map.mjs --in mirror/_pretty/main.built.js`
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";

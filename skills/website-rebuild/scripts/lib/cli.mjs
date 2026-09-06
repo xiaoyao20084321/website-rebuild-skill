@@ -28,6 +28,10 @@
  * `--` (so `--check --other` treats `--check` as bare). `--k=v` is accepted for
  * validation; whether the script's reader honours it is the script's business.
  * A bare `--` ends flag parsing.
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21）
+ * **唯一的 argv 合同**（见上文「命令行约定」）：`--help`/`--version`/未知旗标 FATAL，`EXIT` 退出码常量
+ * `import { cli, EXIT } from "./lib/cli.mjs"`
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -48,7 +52,7 @@ export const EXIT = {
   INTERRUPTED: 130, // SIGINT after a ledger flush
 };
 
-function headerOf(file) {
+export function headerOf(file) {
   if (!file) return "";
   let src;
   try { src = readFileSync(file.startsWith("file:") ? fileURLToPath(file) : file, "utf8"); } catch { return ""; }

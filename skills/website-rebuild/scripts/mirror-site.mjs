@@ -38,6 +38,11 @@
  *      and payloads go through the same downloader and land in the same ledger)
  *   -> objectandarchive-rebuild (query-aware url -> path mapping shared through
  *      lib/urlpath.mjs; srcset candidate lists extracted per candidate).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`mirror-site.mjs`）
+ * BFS 爬虫镜像（资产白名单 + 迭代到不动点；`redirect:manual` + 三本账，含逐文件 sha256；⭐ `redirects.tsv` 与 manifest 一样**跨运行累积**——`--scope` 补页曾把它截成只剩表头，载荷门在 `/work` 撞 404 才发现）。`--scope <前缀>` 把**页面**队列限制在目标路径下（微站挂在企业 CMS 域下时必用；⛔ 只限页面不限资产）。**账本累积**（`--seeds` 补漏不再截短上一轮的行）+ **off-host 普查**（不跟的主机逐个计数并告警——静默丢弃曾让 827 条媒体引用消失而报告写着"57 files saved"）
+ * BFS 爬虫镜像源站（页面/跨域资产，文本资产迭代到不动点；对要求同源 Referer 的资产域补齐 Referer 头、404 模板探测）。**`redirect: "manual"` 硬纪律**：重定向只记进 `redirects.tsv` 并把目标重新入队，绝不把 301 的 body 写在来源路径下。产出三本账：`mirror-manifest.json`（含逐文件 sha256）、`inventory.tsv`、`redirects.tsv`，外加 `urlpath-policy.json`（本镜像用的 url→路径策略，服务/抓包/验收三方读它）。`--seeds` 让第三遍从 bundle/payload 里解出来的 URL 走同一个下载器，账才是一本。**url→路径映射、引用提取与"什么算文本"均已上收进 `lib/`**：映射查询感知（`?width=` 变体不再坍缩）、`srcset` 逐候选提取（旧正则只认引号后第一条，一组 5 条只见 1 条）、**该重扫哪些文件按 声明的 content-type → 扩展名 → 内容嗅探 三级判定**（旧版是一张 `css
+ * js|mjs|json|svg|html?` 扩展名白名单，`.atom`/`.xml`/`.rss`/`.txt` 与无扩展名路由整类不被打开，而闭包门用的是同一张表所以查不出来；`application/octet-stream` 按**没有声明**处理，它是"服务器不知道"不是"这是二进制"）。v0.3.16：绝对 `--out` 按给定路径用；`--rounds/--workers` 须为 ≥1 的整数（否则 exit 2）；三本账每 100 个文件与 Ctrl-C（exit 130）都落盘；瞬时 fetch 错误不再覆盖仍在盘上的好行；重扫抽出的同源 `.html` 统一走页面守卫、当页面爬（`enqueueRef`）|`node mirror-site.mjs --origin https://example.com --hosts cdn.x.com --probe-404 /no-such-page --seeds solved-urls.txt`；确认某参数不改字节后才 `--query-ignore v,cb`
  */
 import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';

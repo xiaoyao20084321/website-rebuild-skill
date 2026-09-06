@@ -69,6 +69,10 @@
  *       node scripts/lib/ports.mjs 21012     # decode one port
  *
  * Zero dependencies (Node 22+ builtins only).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/ports.mjs`）
+ * **端口分配 + 实例身份注册表**（见本文件顶部一节）：`21000 + slot×1000 + lane×10 + side` 的确定性分配（默认互不重叠、端口自带语义）、占用即退 3 并点名占用方、CDP sentinel 归属校验、`serve.mjs` 身份 token 与双侧同一性断言。带 CLI：打印本工作区端口表 / 反解端口
+ * `node scripts/lib/ports.mjs`；脚本内 `import { resolvePort, assertPortFree, assertOwnBrowser } from "./lib/ports.mjs"`
  */
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";

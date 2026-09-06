@@ -64,6 +64,11 @@
  *       node scripts/lib/chrome.mjs --reap     # reap the orphans it lists
  *
  * Zero dependencies (Node 22+ builtins only).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/chrome.mjs`）
+ * 无头浏览器生命周期（**进程组**收割 + 全退出路径 + 启动前孤儿自检；漏子进程会抬高参照侧自比带宽，把像素门调松）与 CDP 载荷硬顶常量。`node scripts/lib/chrome.mjs --all/--reap` 可查/回收残留
+ * **浏览器/子进程生命周期注册表**（见本文件顶部一节）：`detached` 进程组启动、SIGTERM→SIGKILL 分级收割、六条退出路径全覆盖、临时 user-data-dir 即身份、启动前同角色**孤儿**自检并响亮回收；另收 CDP 载荷硬顶的实测常量与降级建议（`shotCeilingAdvice`）。`spawnReaped` 供非 Chrome 的子进程（被测服务）复用；v0.3.18 起也是 **`findChrome()` 与 `headlessArgs()` 的唯一出处**（此前三份候选路径表 + 一处写死的 macOS 路径）。带 CLI：列出/回收本机实例
+ * `node scripts/lib/chrome.mjs --all`；脚本内 `import { preflightChrome, launchChrome } from "./lib/chrome.mjs"`
  */
 import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";

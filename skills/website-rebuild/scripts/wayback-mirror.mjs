@@ -40,6 +40,10 @@
  *        [--hosts cdn.example.com] [--anchor 20200626202014 | auto]
  *        [--window-days 365] [--out mirror] [--workers 2] [--include-3xx]
  *        [--limit N] [--seeds urls.txt]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`wayback-mirror.mjs`）
+ * **X 类抢救:死站 → 标准镜像**(`references/archival-rescue.md`)。CDX 枚举 → 锚点+时间窗逐 URL 选连贯捕获(auto 锚点 = 根页 200 最密年代取中位,抢注者时代的 301 垃圾靠状态码+窗口出局)→ `id_` 旗抓**原始字节**(绝不镜像被注入改写的回放 HTML)→ 产出与 mirror-site 同构的 mirror/ + 账本 + `wayback-provenance.json`(逐文件捕获时间戳/digest,死站的坐标系)。⛔ **洞是既成事实**:登记进 `wayback-holes.txt`(即 verify-mirror 的 --allow-missing 清单);⭐ **别名回填**——洞的同名文件在窗口内有捕获时抓来存到被引用路径,单列 FILLED BY ALIAS 段,推断不冒充捕获。默认 2 worker + 350ms + 指数退避:**抢救不是竞速**
+ * `node wayback-mirror.mjs --origin https://dead.example --anchor auto --window-days 365`
  */
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";

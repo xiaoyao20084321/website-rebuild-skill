@@ -92,6 +92,10 @@
 // one: the gate stays green, holding a real file up as evidence for a claim
 // about a different one. Escape flavour and escape depth are unbounded; the
 // shape list is not.
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/extract-refs.mjs`）
+// **唯一的资产引用提取器 + 唯一的"什么算文本"判定**，爬虫与 `verify-mirror.mjs` 的闭包门共用——门若自带一份正则，就会继承被审爬虫的盲区，然后报出一个"引用集 − 磁盘集 = ∅"的假绿。五种写法：绝对 / 协议相对 / 根相对属性（含 `poster`/`content`/`data-src` 等懒加载拼写）/ **`srcset` 逐候选** / CSS `url()`。`srcset` 是逗号分隔候选表，只有第一条前面有引号，引号锚定的正则一组只看得见 1/5 条，而账本看上去是齐的。**五种写法各跑两遍：原文一遍、解码归一后再一遍**（D-T10）——绝对 URL 的字符类排除反斜杠是**故意**的（匹配必须停在转义边界），代价是**用转义拼写的 URL 根本不会开始匹配**：`https:\/\/host\/path`（Liquid `\| json` / `json_encode`）、JSON 套 JSON 的 `https:\\/\\/…`、`/`、属性里的 `&#x2F;` 整类隐形。**因果链是这条脚本存在的理由本身**：发现侧正则残缺 → 引用集少一整类 → 闭包门在那个短了的集合上算差集 → **报"= ∅"并且是绿的**（门没有失败，它在一个已经错了的输入上正确地跑了；与"镜像要有自己的门"同族）。修法不是补两条正则而是**整套写法在解码视图上重跑一遍**，因为转义会与其它写法**复合**（JSON 里嵌 HTML 的转义 `srcset` 候选表，要同时看穿 `\"` 与 `\/`）。⛔ v0.3.15（raycastkbd）：**srcset 候选按构造是资产，`?url=` 图片代理是资产**——`addIfAsset` 的"同源无扩展名 = 页面"规则曾把 `/_next/image?url=…&w=640` 整族丢掉：srcset 形态找到 42 条、同一函数里全部丢弃、闭包报 ∅，盘上只有浏览器碰巧要过的 19 条且是 `*/*` 回退字节。现在 srcset 候选带 `{asset:true}` 直通，`[?&]url=` 的同源无扩展名 URL 视为资产，`<img src="/_next/image?…">` 这类裸属性另有 4a 形态；`/about?tab=2` 仍是页面
+// `import { createRefExtractor } from "./lib/extract-refs.mjs"`
 
 // WHICH FILES GET SCANNED AT ALL — a gate's INPUT, not its assertion
 // 【objectarchive N13 / D-T12】

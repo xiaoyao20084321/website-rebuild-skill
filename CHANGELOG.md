@@ -1,5 +1,105 @@
 # 更新记录
 
+## v0.3.22 — 浏览器道：像素门与探针的判决第一次有了反例（离线 200 + 浏览器 16，变异三处五抓）；lenprefix 的"无可查"分成两种
+
+**问题 1**：v0.3.20 给十道离线门补了反例，但 skill 的头牌承诺"逐像素一致"落在 pixelcompare 的 0.00 上、CLEAN 落在 probe 上——
+这两道门（还有 pixel-walk / verify-routes / verify-crossside / verify-tween / verify-harvest）只有真起 Chrome 才存在，离线道按章程碰不到。
+0.3.18 把它们脚下的 CDP 底座整个换掉（`lib/cdp.mjs` 新建 110 行；probe −136、pixelcompare −85、netcapture −182、sweep-routes −91），
+当时没有任何一条判决断言护着。
+
+**做法**：第二条道 `selftest/browser.mjs`（`npm run test:browser`），独立 CI job，也是发布前的一步。真起无头 Chrome，`serve.mjs` 在
+loopback 起两个进程（a = rebuild、b = mirror，与 pixelcompare 的默认标签一致），夹具是 128 格纯色网格——无字、无字体、无动画，同一份 HTML
+两次渲染逐字节相同，正是像素门自己依赖的确定性；换一格颜色就是可复现的差。16 条：
+- **pixelcompare**：两进程同页 **0.00** 且 metric.json 记 0；换一格 + `--max-mean 0` → 红并打印数字（`GATE FAIL: meanAbsDiff 1.26 > 0`）；
+  **同 URL 两侧退 3**（一个进程量两次就是不可见的假绿）；两张空帧退 5（对着空比出的 0 不是结果）；同 URL 带 `--self` 才允许且标为
+  BAND SAMPLE；`--max-mean` 在 `--self` 下被忽略**并说出来**。
+- **probe**：干净页 CLEAN；一个 404 图红且点名；`console.error` 红且回显；离开 origin 的请求成功时不带 `--no-external` 是 CLEAN、带则红；
+  `--expect-side mirror` 打到 rebuild 服务器 FATAL 3 并说 "answers as side REBUILD"，对的侧过。
+- 夹具要放 `favicon.ico`：Chrome 会主动要，没有就是 404，探针如实计——真项目里复刻侧漏 favicon 也是这么被抓的。
+
+**变异测试**：像素红判改退 0、空帧拒绝改退 0、探针退出码钉 0 → **5 FAIL，每条点名到门**。
+
+两条道共用新的 `selftest/harness.mjs`（断言 / 夹具写入 / 脚本运行 / loopback serve 各一份拼写，run.mjs 里的本地副本删掉）。`run()` 改
+`spawnSync`，**退 0 的 stderr 也进 out**——否则"告警而不退"这类语义永远断言不到（`--max-mean` 被忽略的那条正是这样漏的）。run.mjs
+头注章程改口：不驱动 Chrome 的是这一条道，不是整个 selftest。
+
+**问题 2**：`verify-lenprefix` 对"没有 flight 流"打 note 后仍说 **PASS** 退 0，空目录同样 PASS——"你给我的输入是空的"和"这类站没有这种
+东西"混成一种，而一道永远 PASS 的门让"N 道门全绿"虚高一格。现在：空目录 **FATAL 5**（与 zerodep 同一句"一个都没查到就是同意一切"）；有文档
+但无 flight 流 **SKIPPED 退 0、不说 PASS**（与 verify-fresh 的 SKIPPED 同款：登记进计划，不计入绿）。selftest 钉三条。
+
+**范围外（登记）**：verify-routes 是文件内 CONFIG 形态，命令行驱动不了，未进浏览器道；pixel-walk / verify-crossside / verify-tween /
+verify-harvest 待"判定核拆分"（把 CDP 抓取与纯函数判决分开）时顺手补。
+
+耗时：离线道 ~37 s，浏览器道 ~32 s（7 次 Chrome 启动）。
+
+## v0.3.21 — scripts/README 索引化：三处各归一处（规格进头注、故事进 case-studies、表只答"选哪个"），零丢失 765/765
+
+**问题**：`scripts/README.md` 81.5K 是全 skill 最大的一份文件，比四拆之后的 `verification-gates.md` 还大。它不是战史堆出来的——
+按句切，主表故事只占 9%、速查表 19%。它是**规格的第二份拷贝**：主表 55 行记用法 / 出处 / 成熟度，速查表 49 行记用途 / 阶段，
+同一个脚本要查两处；两表 659 句与脚本自己的 `--help` 头注逐字重复 0 句——因为是**同一份规格的中文版**，手工维护，没有任何东西
+同步它们。v0.3.17 已让 57/61 个脚本自描述，这份文件一直在复述它们。
+
+**做法**：三处各归一处——
+- **选哪个** → README：一张索引表，一行一个脚本（`路径 | 一句话用途 | 阶段 | 出处 | 成熟度`），两表合一；跨脚本规则
+  （端口身份 / Chrome 进程 / 退出码 / CLI 约定）留在正文。
+- **怎么跑** → 脚本头注：README 里的规格句**逐字**搬进各脚本头注的 `中文规格（自 scripts/README.md 迁入，v0.3.21）` 块，
+  `--help` 原样打印；59 个文件 +52.7K。头注和代码在同一个文件里，没法漂移。含 `*/` 的规格句（module-map 的
+  `webpackChunk*/…`）会提前关掉块注释，该文件整份头注改成 `//` 行式，`lib/cli.mjs` 的 `headerOf` 两种都读、`--help` 输出不变。
+- **为什么** → `references/case-studies/scripts.md`（3.7K），小节名按脚本路径。
+
+**零丢失是可证的**：`check-cases.mjs` 认第三个合法去处——脚本头注，而且经 `lib/cli.mjs` 导出的 `headerOf` 读，**hay 就是
+`--help` 打印的东西**。765 句 `missing 0`。正文段落**整段全是故事才搬**，规则与证据混写的段原样保留（v0.3.19 的"裁剪停在规则边界"）。
+
+**搬迁顺手抓到的漂移**：`cold-audit-modules.mjs` 的用法行写 `[--src port]`，脚本从未认过 `--src`（只认 `--map` / `--closure`）。
+规格搬进头注时 selftest 的「用法行旗标 ∈ known 集」当场判红。之前的"零幽灵旗标"是按全脚本并集查的（`--src` 在 verify-symbols
+里合法），逐脚本才看得出来。那行留在 case-studies 当证据，不进头注。
+
+**新门**（selftest 193 → 198）：索引行 ↔ 磁盘文件**双向相等**（62 ↔ 62；顺手补了 `lib/flight` / `lib/shell-build` / `lib/version`
+三行）；`tools/README` 提到每个 `tools/*.mjs`；59/62 行的头注带中文块（三个 lib 新写的行没有可搬的）；`case-studies/scripts.md`
+每个小节名必须是磁盘上的脚本路径或 README 章节名。
+
+**预算**：`scripts/README.md` 79.6K → 29.4K；必经 + Flow 点名 521,652 → 470,460 B ≈ **11.7–15.6 万 token**（此前 13.0–17.3 万）。
+`SKILL.md` 路由句改为"旗标与完整规格看 `--help`"。
+
+## v0.3.20 — 判红覆盖：每道离线门都有一个反例（selftest 143 → 193，变异测试三门五抓）
+
+**问题**：143 项断言里只有 **6 条**断言"门必须判红"（verify-mirror 的 WAF 体与单字节、verify-flight 单字节、
+verify-nextdata 改 pageProp、textref 非文本、negotiate 无 accept 的 Vary）。其余 130 项问的都是"好输入下门会不会绿"。
+一道悄悄失去牙齿的门从绿侧不可见——它产出的不是错误报告，是一份完美的绿报告（scripts/README 说端口串台时
+"**假绿是不可见的**"，这句原样适用于套件自己）。连续三个大手术版本（0.3.17 CLI 收拢、0.3.18 lib 收拢净减 219 行、
+0.3.19 战史外置）之后，这个洞正敞着；61 个脚本里 43 个从未进过测试。npm 分发面刚接上（`npx` 一条命令、tag 触发
+CI 自动发布），`npm test` 成了坏版本与使用者之间的最后一道闸。
+
+**做法**：每道离线门从**同一份 fixture** 驱动两次——原样必须退 0 并说 PASS；改坏**一处**必须退 1 且消息**点名**那处。
+有"没东西可查"分支的门钉死退 5，永不退 0。节内的 `green()` / `red()` 助手同时断言退出码与消息：只看退出码，
+"打印 FAIL 但退 0"看不见；只看消息，"退 1 但没说为什么"看不见。
+
+| 门 | 绿 | 红 | 钉住的语义 |
+|---|---|---|---|
+| verify-zerodep | 1 | 3 | 裸说明符点名到文件；门引 `tools/` 是"检查者不能是生产者"；空目录 FATAL 5 |
+| verify-reassembly | 2 | 4 | 改一字节红**在那个 part**；顺序错红在 join；重抓过的 chunk 让旧 manifest 失效（`--against`）；没有 slices.json 是 FAIL |
+| verify-symbols | 3 | 5 | 掉一个声明点名；无来源声明点名；`allow_orphans` 放行；rename map 解析；非单射；未知形状 map FATAL 5（不是"零重命名"）；0 声明 FATAL 5 |
+| verify-lenprefix | 2 | 2 | 一个 `é` 让 `T5` 下多出一字节即红；声明超过剩余；无 flight 流是 note |
+| verify-shell | 2 | 2 | 一个未登记字节红并显示两侧；**与镜像逐字节相同的 shell 过 HUNKS 但红 PORT-SUBSTITUTION**——否则每道下游门都在拿源站和自己比 |
+| verify-fresh | 3 | 3 | 桩 esbuild 逐字节复制：src 比 dist **新**但字节相同仍绿（mtime 不是裁判）；src 改了 dist 陈旧；site 不是 dist；无 esbuild FATAL 2；无 bundle 步 SKIPPED 退 0 |
+| verify-refs-served | 2 | 1 | （loopback `serve.mjs`）404 的引用带状态码列出；`--allow` 把洞变成登记洞 |
+| verify-offline | 1 | 3 | （loopback）外域 preconnect 是 class 1；内联 `sendBeacon` 是 class 2/3；没人监听 FATAL 5 且消息带 serve 命令 |
+| verify-payload | 2 | 6 | （两个 loopback）只差在资产路径**不红**；值差红在叶路径 `$.hero.n`；单侧缺叶；单侧无岛；求值失败（字节 diff 会说"一个字符"的地方）；`--allow-absent` 两侧一致才过 |
+| lib/png.compare | 1 | 2 | 全同 0.00；一像素差不为 0；尺寸不同**拒绝**而非比较重叠 |
+
+**变异测试**（证明反例会咬，不只是绿）：三门改哑——reassembly 永远退 0、symbols 删掉 orphans 断言、fresh 把 sha
+比较改成恒等——跑套件得 **5 FAIL，每条点名到门**。reassembly 那个仍在打印 `FAIL — 1 decomposition(s) do not
+reassemble` 却退 0：v0.3.16 修过的病，老套件从绿侧永远看不见。
+
+**范围外**（按套件头注保持离线）：浏览器门 probe / pixelcompare / pixel-walk / verify-routes / verify-crossside /
+verify-tween / verify-harvest，与 verify-module-map（`npx acorn`）。可分离的算术（lib/png）已覆盖。verify-ssr 是
+项目内配置形态，未进。
+
+**登记而未改的一条语义**：verify-lenprefix 对没有 flight 流的文档打 note 并退 0。对非 Next 站这是对的；但"没东西可查
+退 0"与 verify-zerodep / verify-reassembly 的"没东西可查是 FATAL / FAIL"不一致。这次钉住现状，去留待定。
+
+耗时 37 s（4 个 loopback serve + ~45 次脚本 spawn）。
+
 ## v0.3.19 — 战史外置：规则留在文档里，实证搬进 case-studies/（零丢失，逐句可证）
 
 评审清单的最后一项。每份 reference 里，规则与支撑它的实战故事是混写的——"实证 / 实测 / 【代号】"行在

@@ -13,6 +13,11 @@
  * an identifier invites it to be copied back in truncated.
  *
  *   node scripts/closure.mjs --seed <id>[,<id>...] [--map docs/module-map.json] [--out docs/slice-closure.json]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`closure.mjs`）
+ * 从种子模块算**传递依赖闭包**，是竖切边界的唯一依据。⛔ **未知种子 ID 一律 FATAL** 并给出 did-you-mean——静默丢弃会产出一个“小一号但看似合理”的切片，失败推迟到运行时
+ * 从种子模块算传递依赖闭包，竖切边界的唯一依据。⛔ 未知种子 ID 一律 FATAL + did-you-mean
+ * `node scripts/closure.mjs --seed <id>`
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";

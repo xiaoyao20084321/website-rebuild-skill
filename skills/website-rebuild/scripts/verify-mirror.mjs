@@ -89,6 +89,11 @@
  *
  * New in this toolchain (objectandarchive-rebuild M0 wrote the lessons; the
  * TODO list has carried a site-coupled careers-kimi ancestor since the start).
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-mirror.mjs`）
+ * **镜像自己的门**，跑在断网门之前。五项断言：映射单射性 / 账本与磁盘 sha256 / **真实性（挑战页正文 + 声明类型对魔数——一个 200 不是"你拿到了那个资源"的证据）** / 闭包 / 可选抽样回源。下游所有门问的都是"渲染得出来吗"，**错的镜像能让它们全绿**
+ * **镜像自己的门**（其余所有门问的都是"渲染得出来吗"，没人问"字节对不对"，所以错镜像能全绿）。**五项**断言，失败退 1：① **映射单射性**——不同 URL 落到同一文件即失败，分别对"账本记录的路径"（已经发生的坍缩）和"`lib/urlpath.mjs` 今天算出的路径"（现行策略会造成的坍缩）各查一遍，两者不一致即 MAPPING DRIFT（镜像是用另一套映射/查询策略写的）；② **账本一致性**——manifest 逐行 sha256/字节对磁盘实测、`inventory.tsv` 与 manifest 互校、账本条目集 = 磁盘文件集（孤儿/幽灵都点名）；③ ⭐⭐⭐ **真实性（AUTHENTICITY）**——**与其余四项正交**：那四项校验"账本与磁盘是否自洽"，这一项校验"磁盘上的东西是不是你以为的那个东西"。`interstitial` 认已知挑战/拦截正文（Cloudflare / Incapsula / Akamai / Sucuri / PerimeterX / "Just a moment" / "Checking your browser"…，**硬红**；厂商专有标记任意体量都判红，而真页面也会命中的弱标记（reCAPTCHA 控件、WAF 脚本名）只在**整份文档 <32 KB** 时才算数——挑战页**就是**整份文档；`--interstitial-extra` 加自己遇到的那一种）；`type-confusion` 拿**源站声明的 content-type**（不是 URL 扩展名——扩展名是源站的命名选择，实测某站在 `.woff` 上返回 `font/woff2` 字节，按扩展名判会报假红）与正文魔数对照，声明二进制而正文是 HTML 文档的一律红（**硬红**）；`size-outlier` **只报线索不判红**——同类分组带上变换参数（`?width=` 之类），否则缩略图整批报成拒绝页（fixture 实测：只按扩展名 9 条线索、8 条假；带参数 1 条、正是那条真的）。④ **闭包**——引用集 − 磁盘集 = ∅，用与爬虫**同一个** `lib/extract-refs.mjs`（连"什么算文本、该打开哪些文件"也共用同一份判定），门不会继承被审对象的盲区（`--allow-missing external.txt` 放行已登记的非文件/降级项）。**这道门三次假绿都出在它的输入而不是它的判据上**，而"= ∅"这个差值恰恰说不出这件事：一次是引用集少了一整类转义拼写（修在 `lib/extract-refs.mjs`）；一次是**豁免按前缀匹配**——一条 `NOTFILE …/8914/files`（合成器拼接用的基址字面量，本身确实不是文件）顺手豁免了**整个子树**，而那正是店方自建资产目录（字体 + 122 张画框 PNG），"这不是文件"就地变成了"这目录下缺什么都不用报"。现在**豁免只豁免它写的那个东西**：整 host 一行 = 整 host 豁免（接受降级/整站 stub 的本意），**完整 URL = 精确匹配**（基址豁免不再吞子树），要子树语义必须写成 `<base>/*` **显式声明**，且每次运行都会把每条前缀豁免单独打印出来（"这块子树没人在审"）；一次是**它打开了哪些文件**——扩展名白名单把 `.atom`/`.xml`/`.rss` 整类挡在门外，而爬虫用的是同一张表，所以两侧共享盲区；⑤ **抽样回源**——`--resample N` 重新请求 N 条比 sha256，**默认关闭**，开启时低频（`--resample-delay`，默认 1500ms）、默认排除 HTML。它抓的是"镜像与源站已经分道"，**不再是"拿到的是不是拒绝页"的唯一手段**（那件事现在由 ③ 离线完成）
+ * `node verify-mirror.mjs --mirror mirror --allow-missing mirror/external.txt`；发布前 `--resample 8`
  */
 import { open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";

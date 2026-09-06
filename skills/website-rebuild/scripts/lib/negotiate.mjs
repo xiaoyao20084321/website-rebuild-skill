@@ -18,6 +18,11 @@
 // 与 D1a 四形态改写是同一课（只认一种拼写的规则天然失明，失明时表现是绿灯）。
 //
 // 本文件的合同由 selftest 钉住（沉默失效过八个版本的教训——没人查的规矩会安静失效）。
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`lib/negotiate.mjs`）
+// 内容协商 Accept 策略（`IMG_ACCEPT` 逐字照抄 Chrome 图片请求头——标尺只有一把；`imageAcceptFor` 认 CDP TYPE 提示/扩展名/next/image 代理解码；`isNegotiated` 读 Vary）+ Sanity 证据提取（`sanityEvidence`，裸写/`\/` 转义/%2F 编码三种拼写归一）。出身 basement D5；合同由 selftest 钉住
+// **内容协商与请求头的唯一出处**：`IMG_ACCEPT` / `imageAcceptFor` / `isNegotiated`（浏览器同款图片 Accept）、`sanityEvidence`；v0.3.18 起也是 `BROWSER_UA` / `BARE_UA` 与 **std→bare 请求头梯子**（`fetchProfiles` / `fetchLadder`）的唯一实现——此前五份 UA（两种 Chrome 版本）、四份梯子
+// `import { fetchLadder, BROWSER_UA } from "./lib/negotiate.mjs"`
 
 /** Chrome 图片子资源请求的 Accept 头，逐字照抄。 */
 export const IMG_ACCEPT =

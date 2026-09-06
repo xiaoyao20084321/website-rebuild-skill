@@ -28,6 +28,11 @@
 // a countdown on setInterval left two consecutive dumps of the SAME mirror
 // disagreeing on 7 numeric fields. With all of them pinned, __pump's time is
 // the only clock in the page and A/B comparison is frame-exact.
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`probe-shim.js`）
+// 确定性驱动 shim（接管整个熵面：rAF/timer/`performance.now`/`Date.now`/定种 `Math.random`/**IntersectionObserver**，手动泵到任意 t，双侧同位注入）。⭐ **IO 也是一个时钟**——浏览器按自己的节奏投递交叉记录，滚动揭示站因此无法冻结；
+// 确定性驱动 shim：接管**整个熵面**——rAF / setTimeout / setInterval / visibility / `performance.now` / `Date.now` / `new Date` / `Math.random`（定种 mulberry32，可 `__reseed(n)`），`__pump(dt,frames)` 手动泵帧后这些时钟全部与帧时间锁步，双侧同位注入（serve.mjs `?__probe` 自动注入）。只冻 rAF 不够：漏掉的时钟会让同一镜像两次采样差出数值（实测 7 个字段）
+// 由 serve.mjs 注入；探针侧调 `window.__pump(16.7, 60)`
 (function () {
   if (typeof location === "undefined" || !location.search.includes("__probe")) return;
 

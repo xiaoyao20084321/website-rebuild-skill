@@ -18,6 +18,10 @@
  * it red at the exact part.
  *
  *   node scripts/verify-reassembly.mjs --dir src/readable [--against src/site]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-reassembly.mjs`）
+ * **重拼门**：逐部件 sha + 按序拼接 sha + `--against` 对活原件三重比对。字节等价成立时全部运行时门的裁决免费转移到可读层;部件内容被改一个字节即红并点名。呈现层编辑（改名/挪目录）以本门保持绿为许可判据
+ * `node verify-reassembly.mjs --dir src/readable --against src/site/_nuxt`
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";

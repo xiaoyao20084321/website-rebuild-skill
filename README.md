@@ -1,7 +1,10 @@
 # website-rebuild-skill
 
+<a href="https://trendshift.io/repositories/128679" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/128679/daily?language=JavaScript" alt="#3 JavaScript Repository Of The Day | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/128679" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/128679/daily" alt="#14 Repository Of The Day | Trendshift" width="250" height="55"/></a>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.13-blue.svg)](CHANGELOG.md)
+[![npm](https://img.shields.io/npm/v/website-rebuild-skill.svg)](https://www.npmjs.com/package/website-rebuild-skill)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-brightgreen.svg)](https://agentskills.io/)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-339933.svg)](#快速开始)
 
@@ -75,6 +78,20 @@
 | `npx` | 个别工序 spawn 钉死版本的外部工具（从不 import） |
 
 ### 安装
+
+两种方式都行，装的是同一份目录。
+
+**方式一：npx（一条命令，不用克隆仓库）**
+
+```bash
+npx website-rebuild-skill                    # → ~/.claude/skills/website-rebuild
+npx website-rebuild-skill --project          # → ./.claude/skills/website-rebuild
+npx website-rebuild-skill --dir <skills 目录>  # 其他 runtime，目录名 website-rebuild 会自动追加
+```
+
+安装器**只拷文件**——不跑 skill、不开浏览器、不联网，本身零依赖。拷完按 sha256 逐文件双向校验，全部匹配才算成功；目标已存在会打印在装的版本并拒绝，要 `--force` 才替换。`--dry-run` 可以先看它打算写什么。
+
+**方式二：手动拷贝（已经克隆了仓库）**
 
 把 `skills/website-rebuild/` 整个目录放进你的 agent 的 skills 目录。以 Claude Code 为例：
 
@@ -233,8 +250,8 @@ skills/website-rebuild/    # 技能本体，目录结构遵循 agentskills.io �
 ├── scripts/               #   零依赖 Node 工序脚本与验收门 + lib/ 共用模块
 │                          #     判级与源码化之前的全部工序都住这里
 └── tools/                 #   源码化阶段的重构器，允许 devDependencies
-selftest/                  # 仓库冒烟自检（npm test；不随 skill 分发）
-.github/workflows/         # CI：push/PR 自动跑 npm test
+selftest/                  # 仓库自检：npm test（离线）+ npm run test:browser（真 Chrome）；不随 skill 分发
+.github/workflows/         # CI：push/PR 跑两条道；tag 触发 npm 发布
 CHANGELOG.md               # 更新记录
 README.md                  # 本文件
 README.en.md               # 英文版 README
@@ -261,7 +278,7 @@ README.en.md               # 英文版 README
 
 版本随真实复刻项目递进：每个版本发布的功能与修复，都先在至少一个完整项目上验证过。
 
-完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.19**：战史外置——24 份文档各拆成「规则」与「实证」两半，故事逐字搬进 `references/case-studies/`（不在必经集合，只在追问「这条规则为什么存在」时读），规则原处留指针、【代号】不丢；零丢失由 `check-cases.mjs` 逐句比对证明（6,800+ 句全部 missing 0，过程中救回两次子代理中途失败造成的缺口）；必经集合 12.6–17.8 万 → 11.3–15.9 万 token；selftest 140→143（案例文件的三条不变量：有母文档、标题对得上、指针不指向空处）。
+完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.22**：浏览器道——"逐像素一致"落在 pixelcompare 的 0.00 上、CLEAN 落在 probe 上，这两道门只有真起 Chrome 才存在，此前零反例，而 0.3.18 换掉了它们脚下的整个 CDP 底座。现在第二条道 `npm run test:browser` 真起无头 Chrome 对 loopback 纯色网格夹具驱动判决：0.00 / 换一格红 / 同 URL 退 3 / 空帧退 5 / `--self` 带宽 / 404 / console.error / 零外联 / 错侧退 3，共 16 条；变异三处五抓。lenprefix 的"无可查"分成空目录 FATAL 5 与不适用 SKIPPED（不再说 PASS）。离线道 200。
 
 ## 贡献
 
@@ -269,7 +286,7 @@ README.en.md               # 英文版 README
 
 - **每条功能与修复都要有实测出处**——本仓的版本历史全部来自真实复刻项目里撞出来的问题，PR 请说明它在哪个目标上被验证过；
 - **`scripts/` 保持零依赖**（`node:` 之外不许 import，门不许 import 生产者）——`scripts/verify-zerodep.mjs` 会在评审时执行这条纪律；
-- 提交前跑 **`npm test`**（秒级冒烟：语法 / 零依赖 / 共享库实测教训 fixture / 微型镜像端到端）——CI 会在 PR 上自动执行同一套。
+- 提交前跑 **`npm test`**；动了浏览器门（probe / pixelcompare / serve）再跑 **`npm run test:browser`**（真 Chrome，半分钟）（秒级冒烟：语法 / 零依赖 / 共享库实测教训 fixture / 微型镜像端到端）——CI 会在 PR 上自动执行同一套。
 
 ## 许可
 

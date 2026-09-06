@@ -8,6 +8,9 @@
 // 为什么存在（14islands F4）：js-beautify 会改变嵌套模板字面量的内容，而以排版字节
 // 交付的路线上，像素门/CLEAN/probe 全部照绿——只有 token 流看得见。任一对不等即 FAIL，
 // 打印首个分歧 token 的序号与两侧值。⛔ 退出码不许经过管道 tail（F10）。
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21）
+// **token 流等价门**：排版/再发射件 ≟ 源站原件逐 token（类型+值）相等，空白/位置无关（`lib/tokens.mjs`，acorn 钉死）。凡以 `_pretty` 字节交付（再发射、切片拼接）必跑——像素/CLEAN/probe 对模板字面量内容改变全部失明（14islands：748,409 vs 748,398）
 import { readFileSync } from "node:fs";
 import { tokenStream, firstDivergence, showToken, ACORN_VERSION } from "./lib/tokens.mjs";
 import { cli } from "./lib/cli.mjs";

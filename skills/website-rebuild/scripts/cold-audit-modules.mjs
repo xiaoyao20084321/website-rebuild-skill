@@ -30,6 +30,11 @@
  *
  *   node scripts/cold-audit-modules.mjs --map docs/module-map.json \
  *        --closure docs/app-closure.json
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`cold-audit-modules.mjs`）
+ * **M(n) 冷头清点（模块化产物）**：逐模块对账，并查有没有**计算出来的 require**（认 webpack 与 Turbopack 两种工厂签名；v0.3.12 起认 merged map 的 `locations[]`/`source`，不再要求摊平+软链；v0.3.15 起认 Turbopack 经典单参工厂 `function(C){…}`——loader-stub 家族的再导出 shim，此前报"只查了 2/3"）。⛔⛔ **必须报出 `n/N examined` 并把覆盖率当判据**——它曾在一个模块都没查的情况下报绿；改成「仅 0 时报错」之后，又在查了 1/20 时报绿。
+ * ⚠ 零依赖阶段分辨不了作用域遮蔽，所以只**判定**"有没有未移植模块被已移植模块 require"，疑似动态 require **列出来交人读**
+ * **冷审（M(n) 关账）**：功能测试看不见整块缺失的模块——你驱动的路径只会问你建了的东西。把 bundle 定义的模块清单与 port 逐条对账（未移植的必须无人 require），并扫计算型 require；**检查覆盖率必须说出来**——认不出工厂签名的模块数为零才算审过（"我什么都没看"报成 ok 是它能犯的最贵的错）。v0.3.15：认 Turbopack 的**经典单参工厂** `function(C){ C.n(C.i(id)) }`（loader-stub 家族入口 chunk 用它注册 stub 目标的再导出；
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";

@@ -38,6 +38,10 @@
  *
  *   node scripts/slice-esm.mjs --in src/site/_nuxt/DqcYvDA3.js \
  *        --out src/readable/DqcYvDA3 [--fn-lines 12]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`slice-esm.mjs`）
+ * **拼接式分解切片器**（无容器 scope-hoisted 产物的语义源码层,`readable-source.md` §3.0.6）：把一个 ESM chunk 切成按声明命名的部件文件,**按序拼接逐字节等于原件**——不重写,求值顺序与作用域构造性不变。切点只在可证明安全处（深度 0 + 前 token `;`/`}` + 后 token 起始声明）,漏切只更粗、错切不可能;文件名取声明自己的标识符（一级证据）;写盘前先自证重拼
+ * `node slice-esm.mjs --in src/site/_nuxt/X.js --out src/readable/X`
  */
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";

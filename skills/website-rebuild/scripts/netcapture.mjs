@@ -59,6 +59,11 @@
 //   -> shopifydesign-rebuild (--hosts allow-list replacing the same-origin
 //      filter, off-host census + under-observation warning, disk diff that
 //      knows the assets/<host>/ layout).
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`netcapture.mjs`）
+// 真实浏览器 CDP 抓包对账补录运行时资源（**CDN 站必须传 `--hosts`**，否则只观测同源流量、会报假 GAP=0）
+// 真实浏览器 CDP 抓包，与磁盘镜像 diff 对账（HAVE/GAP），补运行时拼接 URL。**`--hosts` 在 CDN 站上不是可选项**：记录范围是 host 白名单（语义同 mirror-site 的 `ASSET_HOSTS`，把同一份 host 清单传给它）；不在白名单的 host 只计数并在末尾列出，未传 `--hosts` 却漏掉大量流量时打印 UNDER-OBSERVED 告警——旧版只记同源，会在只看到约 2% 流量时报 GAP=0（实测 246 个 URL 里 208 个在 CDN 上）。落盘对账走 `lib/urlpath.mjs`：**以前按 url+search 记账却按 pathname 查盘**，查询参数化的图片 CDN 上每个变体从第二个起都对着"另一张图"报 HAVE，又是一次假 GAP=0。`--fetch` 只落字节不落账，`verify-mirror.mjs` 会把它记为孤儿——补漏请走 `mirror-site.mjs --seeds`。本家族里跑得最久、被 Ctrl-C 最多，浏览器生命周期走 `lib/chrome.mjs`（进程组收割 + 启动前孤儿自检）。v0.3.16：206 算命中（Range 请求的 video/audio 进 GAP 对账）；`--fetch` 走 `lib/negotiate` 的浏览器图片 Accept + std→bare 梯子并记 `profile`/`vary`，读不到 `mirror-manifest.json` 直接 FATAL（exit 1）而非静默跳过账本
+// `node netcapture.mjs --origin https://example.com --hosts cdn.x.com --routes /,/about`
 
 import fs from "node:fs/promises";
 import path from "node:path";

@@ -22,6 +22,11 @@
  *
  * 用法: node scripts/verify-flight.mjs --built rebuild/.next/server/app --mirror mirror
  *       [--normalize-props views,viewsFormatted] [--normalize-class react-tweet-theme]
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`verify-flight.mjs`）
+ * **C1 语义门**：构建产物 flight 树 ≟ 镜像 flight 树。自带解析器（⛔ 不 import flight-decode——检查者不能是生产者）；规范化只收「证明不携带行为」的构建哈希命名空间（chunk 名/css-module 类/媒体哈希/可提升资源挂载点/编码自由度），**模块 id 做全局双射**（一对多即红）；站点登记项走 `--normalize-props`（ISR 纪元字段）与 `--normalize-class`（库渲染子树）；其余一切差异照红
+ * C1 语义门：构建产物 flight 树 ≟ 镜像 flight 树，逐节点深比较；规范化只收构建哈希命名空间；模块 id 全局双射。站点登记项走 `--normalize-props` / `--normalize-class`（挂偏差表编号）。⛔ 自带解析器，不 import flight-decode
+ * `node verify-flight.mjs --built rebuild/.next/server/app --mirror mirror`
  */
 import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";

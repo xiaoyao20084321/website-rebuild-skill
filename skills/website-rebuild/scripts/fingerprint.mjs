@@ -29,6 +29,11 @@
 //
 // 新写（v0.1.5）：把 scope-and-fingerprint.md §2 的手工协议脚本化，
 // 协议内容零发明——每一步的判据与坑都以该文档为准。
+//
+// 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`fingerprint.mjs`）
+// Step 0 六步探测协议的跨平台等价实现（GET 存活 + 重定向链与终点域同一性、双抓 diff、物种/年代、HTML 技术指纹、bundle 初检；出现次数计数与 <1KB Referer 重试内置；Sanity CMS 证据采集——projectId/dataset/API 主机/auto=format/_key，三种拼写归一，命中即指路 sanity-platform.md）。**只采证据不出判级**——判级仍走 scope-and-fingerprint.md §3 判定树
+// Step 0 指纹侦察（`references/scope-and-fingerprint.md` §2 六步 curl 协议）的跨平台等价——无 POSIX 工具链（Windows PowerShell 无 curl/cmp/fold/tr/perl）也能跑：GET 存活 + 手动重定向链与终点域同一性、双抓确定性 diff、物种/年代 grep、HTML 技术指纹（剥注释枚举 `<script src>`/内联 `import()`、框架模式×引擎范式标记，计数一律出现次数语义 = `grep -o \| wc -l`）、bundle 初检（<1KB 自动补 Referer 重试、minification 形态、three 强签名、`/api/` 计数、catch-all content-type 告警）。**只采证据不出判级**；下载物逐个记 sha256，请求间隔 ≥1s
+// `node fingerprint.mjs --target https://example.com/awarded-path --bundle https://example.com/assets/main.xxx.js`
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";

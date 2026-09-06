@@ -40,6 +40,11 @@
  * (EXT-X-MEDIA alternate renditions, I-FRAME playlists, EXT-X-MAP fMP4 init
  * segments, EXT-X-KEY), relative-URI resolution against each playlist's own
  * URL (subdirectory ladders, not just flat siblings), and manifest append.
+ *
+ * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`gapfill-video.mjs`）
+ * HLS/DASH 流媒体阶梯补录（master → rendition → 分片），静态爬虫的结构性盲区
+ * HLS 流媒体阶梯补录：master m3u8 → 递归取 variant/备用音轨/I-frame 播放列表 → 逐段下载 `.ts`/`.m4s`（含 EXT-X-MAP 初始化段、EXT-X-KEY）→ 追加进 manifest 账本。补的是静态爬虫的结构性盲区：HTML 里只有 master，其余全由播放器运行时 fetch，只有探针 404 才暴露（`serve.mjs` 的 MIME 表已含 `.m3u8`/`.ts`/`.m4s`/`.mpd`，补录后即可本地回放）
+ * `node gapfill-video.mjs --master https://cdn.x.com/vp/<id>/<id>.m3u8 --origin https://example.com`（`--dry-run` 先看阶梯全貌）
  */
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { dirname, join, relative, extname } from 'node:path';
