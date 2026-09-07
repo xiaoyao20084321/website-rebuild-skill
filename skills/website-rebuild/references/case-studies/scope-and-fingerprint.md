@@ -48,6 +48,9 @@ shopify.design 的 Step 0 用 `tr ';{}' '\n' | grep -c` 数 token，一次产出
 
 - 分层判级的实例：杂交站可分层判级：kprverse 整体 C，但 three 子层（独立 chunk 的命令式代码）可局部按 A 手法转写【probe】。
 
+
+**【lamalama】D 信号第 1 条按字面命中、理由不成立（2026-09-06）**：目标 `https://lamalama.com/` 本身就是 WordPress 页——generator meta `WPML ver:4.9.6` + `WP Rocket 3.23.1.1`，`wp-content` 出现 1,306 次，robots 是 Yoast 模板。但步骤 2 双抓 **byte-identical**（431,958 B，WP Rocket 页面缓存使 PHP 输出事实上静态），步骤 5 的主题 bundle（`dist/assets/app-*.js` 852 KB，Vite ESM）里住着全部签名行为：自研 WebGL 基类（`attachShader` / `drawArrays` / 8 处 `void main`，非 three）、GSAP 3.15.0 + ScrollTrigger、Lenis 1.3.15、Swup 4.8.2 转场、hls.js 1.6.2；`admin-ajax.php` 只服务联系表单 POST，`/api/` 唯一命中是 flareapp 错误上报。按"签名行为住在哪"落「下发行为源 × 命令式引擎」格，四项附加条件（多 chunk 分包 / Bunny 桶 + HLS / 端点 stub / WPML 双语）→ **B**。与 aimservices 的区别：那是 WP 域下的静态子目录，这是 WP 主题站本体——**两种形态都会被"generator + wp-content 密度"的字面判据误伤**，而判据括号里"内容与行为主体在服务端"的两个主体要分别量。
+
 ## 4. 二维判定表 + 三判据规则（防 noomo / shopify.design 型误判，宪法级）
 
 规则见 `scope-and-fingerprint.md` §4。

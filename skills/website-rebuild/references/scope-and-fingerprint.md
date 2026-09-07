@@ -144,6 +144,13 @@ grep -o '/api/'               probe/bundle.lines | wc -l  # >0 ⇒ 镜像阶段�
    │    实证【aimservices】：宿主 robots 三行全是 WordPress，而目标 `/50th/` 的
    │    `wp-content` 命中 **0**、无 generator meta、资产全在 `/50th/assets/` 下——
    │    地面真值是 A。判据本身没错（它量的是路径），错的是照着 robots 先看的读法。
+   │    ⛔ **第二种误伤：目标路径本身就是 WordPress 页，但行为不在服务端**【lamalama】。
+   │    这条判据的括号写的是"内容与**行为**主体在服务端"——两个主体要**分别**量：
+   │    内容由 PHP 渲染不构成 D；只有当签名行为也在服务端（客户端没有可移植目标物、
+   │    或双抓为内容级差异）才是 D。判法：generator meta 命中后**先做步骤 2 与步骤 5**——
+   │    双抓 byte-identical + 主题 bundle 里住着签名行为（自研 GL / GSAP / 转场 / 播放器）
+   │    → 按 §4 二维表继续判 A/B，WordPress 只是外壳生成方（dom-shell-strategies 策略 A）。
+   │    实证：`case-studies/scope-and-fingerprint.md` §3【lamalama】。
    ├─ 双抓为内容级差异（A/B 实验分桶、个性化注水 → 确定性验收彻底断裂）
    └─ 签名行为依赖 cart/checkout/GraphQL 数据面（行为主体是服务端函数）
 3. C 判定（**二维**，任何单信号命中都不判级）【shopifydesign】：先各取一维证据，再交叉查 §4 二维表

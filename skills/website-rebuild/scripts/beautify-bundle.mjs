@@ -123,7 +123,14 @@ for (const file of FILES) {
   // so a corrupt file here poisons every line number after it. On failure the
   // ORIGINAL bytes ship as the coordinates — minified but valid.
   if (type === "js") {
-    const chk = spawnSync("npx", ["-y", "acorn@8.14.0", "--ecma2022", "--silent", dest], { encoding: "utf8" });
+    // A Vite/esbuild chunk is an ES MODULE: top-level import/export is a parse
+    // error under sourceType "script", so the check used to reject every ESM
+    // chunk as "corruption" and ship the 171,858-char line back as the
+    // coordinates — i.e. no coordinates at all (lamalama). Try script, then module.
+    let chk = spawnSync("npx", ["-y", "acorn@8.14.0", "--ecma2022", "--silent", dest], { encoding: "utf8" });
+    if (chk.status !== 0 && /sourceType: module/.test(chk.stderr || "")) {
+      chk = spawnSync("npx", ["-y", "acorn@8.14.0", "--ecma2022", "--module", "--silent", dest], { encoding: "utf8" });
+    }
     if (chk.status !== 0) {
       console.error(`  ⚠ beautified output DOES NOT PARSE (js-beautify corruption) — shipping the`);
       console.error(`    original bytes verbatim as this file's coordinates instead:`);

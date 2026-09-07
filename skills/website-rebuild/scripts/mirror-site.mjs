@@ -311,9 +311,15 @@ const extractAssetUrls = createRefExtractor({
 const SCOPE = flag('scope', null);
 const inScope = (p) => !SCOPE || p === SCOPE.replace(/\/$/, '') || p.startsWith(SCOPE);
 
+// Root-relative `href="/x"` AND absolute/protocol-relative same-origin
+// `href="https://host/x"` — WordPress and most CMS themes emit the latter for
+// every internal link, so a root-relative-only regex crawls nothing but the
+// seeds (lamalama: 8 service pages missed, the log showed only --pages) [lamalama].
+// host WITH port: a loopback origin is `127.0.0.1:NNNN`, and hostname alone silently matches nothing there.
+const PAGE_HREF_RE = new RegExp(`href="(?:(?:https?:)?\\/\\/${new URL(ORIGIN).host.replace(/[.]/g, "\\.")})?(\\/[^"#?]*)"`, "g");
 function extractPageLinks(html) {
   const pages = new Set();
-  for (const m of html.matchAll(/href="(\/[^"#?]*)"/g)) {
+  for (const m of html.matchAll(PAGE_HREF_RE)) {
     const p = m[1];
     if (!inScope(p)) continue;
     // Not pages. Feeds and data documents (.atom/.rss/.json) are still FETCHED
@@ -409,10 +415,18 @@ async function crawlPages() {
           sha256: sha256(buf),
           type: 'text/html (404 template)',
         };
+      } else if (!res.ok) {
+        // A non-2xx page is not a page: writing its body under <path>/index.html
+        // would make serve.mjs answer 200 where the origin answered 404. Ledger
+        // it like a failed asset; the 404 template comes from --probe-404 [lamalama].
+        manifest[url] = { path: null, error: `HTTP ${res.status} (page)` };
+        fetched.add(url); // attempted this run — the stale-row prune must keep it
+        console.log(`[page] ${path} (${buf.length}b, HTTP ${res.status} — not saved)`);
+        continue;
       } else {
         await save(url, buf, res.headers.get('content-type'));
       }
-      console.log(`[page] ${path} (${buf.length}b${res.ok ? '' : `, HTTP ${res.status}`})`);
+      console.log(`[page] ${path} (${buf.length}b)`);
       for (const u of extractAssetUrls(html, url)) enqueueRef(u);
       if (!isNotFoundProbe) {
         for (const p of extractPageLinks(html)) if (!pagesDone.has(p)) pageQueue.push(p);

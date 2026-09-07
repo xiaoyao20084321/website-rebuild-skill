@@ -136,6 +136,20 @@ const TMP = scratch(".tmp");
   eq("extract — .webmanifest/.jsonld/.woff2 root-relative refs are assets (v0.3.16)",
     ["https://x.com/site.webmanifest", "https://x.com/a.jsonld", "https://x.com/f.woff2"].filter((u) => lx.includes(u)).length, 3);
   truthy("extract — /about is still a page, not an asset (v0.3.16)", !lx.some((u) => u.endsWith("/about")), JSON.stringify(lx));
+  // v0.3.23 (lamalama): an import.meta.glob KEY is not an address, and Vite's
+  // __vite__mapDeps under an absolute base names chunks as "assets/x.js"
+  // relative to that base — 46 of 62 lazy chunks were absent from a "closed"
+  // mirror, and 9 phantom URLs (`"./ticker.js":()=>…`) sat in the ledger as 404s.
+  const jsb = "https://x.com/wp/dist/assets/app-AAAAAAAA.js";
+  truthy("extract — import.meta.glob key \"./x.js\": is not an address (v0.3.23)",
+    !refs(`o={"./ticker.js":()=>M(()=>Promise.resolve().then(()=>d)),"./scroller.js":()=>1}`, jsb).some((u) => /ticker|scroller/.test(u)));
+  truthy("extract — a real \"./x.js\" specifier still resolves (v0.3.23)",
+    refs(`import"./scripts-BBBBBBBB.js";`, jsb).includes("https://x.com/wp/dist/assets/scripts-BBBBBBBB.js"));
+  const vm = refs("const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=[\"assets/a-CCCCCCCC.js\",\"assets/b-DDDDDDDD.css\"])))=>i.map(i=>d[i]);var vt=function(e){return`/wp/dist/`+e}", jsb);
+  eq("extract — __vite__mapDeps entries resolve against the chunk's own base literal (v0.3.23)",
+    ["https://x.com/wp/dist/assets/a-CCCCCCCC.js", "https://x.com/wp/dist/assets/b-DDDDDDDD.css"].filter((u) => vm.includes(u)).length, 2);
+  truthy("extract — …and against the importer's parent dir when no base literal is in the chunk (v0.3.23)",
+    refs("const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=[\"assets/c-EEEEEEEE.js\"])))=>i.map(i=>d[i]);", jsb).includes("https://x.com/wp/dist/assets/c-EEEEEEEE.js"));
   // isTextRefSource: declared type is the oracle; octet-stream means "unknown".
   truthy("textref — declared css wins", isTextRefSource({ url: "https://x.com/f", contentType: "text/css", head: Buffer.from("a{}") }));
   truthy("textref — png bytes not text", !isTextRefSource({ url: "https://x.com/i.png", contentType: "image/png", head: Buffer.from([0x89, 0x50, 0x4e, 0x47]) }));
@@ -743,8 +757,14 @@ const TMP = scratch(".tmp");
   const http = await import("node:http");
   const { execFile } = await import("node:child_process");
   let failA = false;
+  // v0.3.23 (lamalama): internal links are ABSOLUTE same-origin on WordPress and
+  // most CMS themes; a root-relative-only regex crawled nothing but the seeds
+  // (8 service pages missed). And a 404 page must not be saved as
+  // <path>/index.html — serve.mjs would answer 200 where the origin said 404.
   const routes = {
-    "/": ["text/html", `<html><a href="/about">about</a><script src="/app.js"></script><img src="/a.png"></html>`],
+    "/": ["text/html", (host) => `<html><a href="/about">about</a><a href="http://${host}/in/abs/">abs</a><script src="/app.js"></script><img src="/a.png"></html>`],
+    "/in/abs": ["text/html", `<html><a href="/in/gone/">gone</a><img src="/in/x.png"></html>`],
+    "/in/gone": ["text/html", `<html><body>not found</body></html>`, 404],
     "/app.js": ["text/javascript", `fetch("/data.json");x="/legal/site.html";y="/in/page.html";`],
     "/data.json": ["application/json", `{"img":"/b.png"}`],
     "/a.png": ["image/png", "PNGA"], "/b.png": ["image/png", "PNGB"],
@@ -756,7 +776,7 @@ const TMP = scratch(".tmp");
     const r = routes[req.url];
     if (req.url === "/a.png" && failA) { res.writeHead(500); return res.end("boom"); }
     if (!r) { res.writeHead(404); return res.end("nf"); }
-    res.writeHead(200, { "content-type": r[0] }); res.end(r[1]);
+    res.writeHead(r[2] || 200, { "content-type": r[0] }); res.end(typeof r[1] === "function" ? r[1](req.headers.host) : r[1]);
   });
   await new Promise((r) => srv.listen(0, "127.0.0.1", r));
   const origin = `http://127.0.0.1:${srv.address().port}`;
@@ -772,6 +792,11 @@ const TMP = scratch(".tmp");
     truthy("mirror-site — .html named in a chunk, in scope: crawled as a page with its assets (v0.3.16)",
       /\[page\] \/in\/page\.html/.test(c1.out) && existsSync(path.join(OUTM, "in/page.html")) && existsSync(path.join(OUTM, "in/x.png")), c1.out.slice(-300));
     truthy("mirror-site — .webmanifest is queued as an asset and written as a file (v0.3.16)", statSync(path.join(OUTM, "in/site.webmanifest")).isFile());
+    truthy("mirror-site — an ABSOLUTE same-origin href is a page link: /in/abs/ crawled, its asset fetched (v0.3.23)",
+      /\[page\] \/in\/abs/.test(c1.out) && existsSync(path.join(OUTM, "in/abs/index.html")) && existsSync(path.join(OUTM, "in/x.png")), c1.out.slice(-300));
+    const gone = manifest()[`${origin}/in/gone`];
+    truthy("mirror-site — a 404 page is a ledger error row, never <path>/index.html (v0.3.23)",
+      !existsSync(path.join(OUTM, "in/gone")) && gone && gone.path === null && /HTTP 404 \(page\)/.test(gone.error), `${JSON.stringify(gone)} dir=${existsSync(path.join(OUTM, "in/gone"))} log=${(c1.out.match(/.*gone.*/g) || []).join(" | ").slice(0, 300)}`);
     failA = true;
     const c2 = await crawl();
     const row = manifest()[`${origin}/a.png`];
@@ -1234,6 +1259,44 @@ const TMP = scratch(".tmp");
   const { headerOf } = await import(path.join(SKILL, "scripts/lib/cli.mjs"));
   const moved = rows.filter((r) => headerOf(path.join(SKILL, r)).includes("中文规格（自 scripts/README.md 迁入"));
   truthy(`scripts/README — the moved spec answers --help (${moved.length}/${rows.length} rows carry a 中文规格 block) (v0.3.21)`, moved.length >= 55, `${moved.length}`);
+}
+
+// ------------------------------- v0.3.23 (lamalama): beautify-bundle must parse an ES MODULE
+// The post-beautify parse check ran acorn as sourceType "script", so any Vite/esbuild
+// chunk with top-level import/export was "corruption" and the 171,858-char original
+// line shipped back as the coordinates — i.e. no coordinate system at all.
+{
+  const D = W(path.join(TMP, "beautify-esm"), { "esm-AAAAAAAA.js": 'import{a}from"./x-BBBBBBBB.js";export const b=a+1;const c=()=>{return b};export{c}' });
+  const r = run("scripts/beautify-bundle.mjs", [path.join(D, "esm-AAAAAAAA.js"), "--out", path.join(D, "pretty")]);
+  const out = existsSync(path.join(D, "pretty/esm-AAAAAAAA.js")) ? readFileSync(path.join(D, "pretty/esm-AAAAAAAA.js"), "utf8") : "";
+  truthy("beautify-bundle — an ESM chunk parses under the module-aware check: not shipped verbatim (v0.3.23)",
+    r.code === 0 && !/DOES NOT PARSE/.test(r.out) && out.split("\n").length > 3, `exit ${r.code} lines=${out.split("\n").length} ${r.out.slice(-200)}`);
+  truthy("beautify-bundle — …and the ledger records the ESM file as token-equal (v0.3.23)",
+    /esm-AAAAAAAA\.js[^\n]*\| equal \|/.test(readFileSync(path.join(D, "pretty/README.md"), "utf8")), r.out.slice(-200));
+}
+
+// ------------------------------- v0.3.23 (lamalama): fingerprint follows a Vite entry stub
+// main-*.js was 30 bytes of `import"./scripts-…js";` — the "<1KB → refusal page" heuristic
+// fired, retried with a Referer, and reported a 30-byte "bundle". The real bundle is one
+// hop away and every step-5 number belongs to it.
+{
+  const http = await import("node:http");
+  const { execFile } = await import("node:child_process");
+  const routes = {
+    "/": ["text/html", `<html><script type="module" src="/dist/assets/main-AAAAAAAA.js"></script></html>`],
+    "/dist/assets/main-AAAAAAAA.js": ["text/javascript", `import"./scripts-BBBBBBBB.js";`],
+    "/dist/assets/scripts-BBBBBBBB.js": ["text/javascript", `console.log("real");new WebGLRenderer();` + "x".repeat(2000)],
+  };
+  const srv = http.createServer((req, res) => { const x = routes[req.url]; if (!x) { res.writeHead(404); return res.end("nf"); } res.writeHead(200, { "content-type": x[0] }); res.end(x[1]); });
+  await new Promise((ok) => srv.listen(0, "127.0.0.1", ok));
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  const FP = path.join(TMP, "fp");
+  const res = await new Promise((resolve) => execFile(process.execPath, [path.join(SKILL, "scripts/fingerprint.mjs"), "--target", `${origin}/`, "--bundle", `${origin}/dist/assets/main-AAAAAAAA.js`, "--out", FP, "--gap-ms", "50"], { cwd: TMP }, (err, so, se) => resolve({ code: err ? err.code : 0, out: String(so) + String(se) })));
+  srv.close();
+  const rep = existsSync(path.join(FP, "fingerprint-report.md")) ? readFileSync(path.join(FP, "fingerprint-report.md"), "utf8") : "";
+  truthy("fingerprint — a Vite entry stub is named as such and followed one hop (v0.3.23)", res.code === 0 && /ESM 入口桩/.test(rep) && /scripts-BBBBBBBB\.js/.test(rep), `exit ${res.code} ${rep.slice(-300)}`);
+  truthy("fingerprint — …step-5 numbers are the target's, not the stub's (v0.3.23)", /bytes=20[0-9]{2}/.test(rep) && /WebGLRenderer\s*= 1/.test(rep), rep.split("\n").filter((l) => /bytes=|WebGLRenderer/.test(l)).join(" | "));
+  truthy("fingerprint — …and the refusal-page Referer retry did not fire on the stub (v0.3.23)", !/疑似拒绝页/.test(rep));
 }
 
 // ---------------------------------------------------------------- summary

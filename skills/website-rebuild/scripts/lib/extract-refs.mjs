@@ -502,8 +502,27 @@ export function createRefExtractor({ origin, originHost, assetHosts, onOffHost }
     // Measured on hubtown: probe uptime 6s after a 100s settle.
     if (baseUrl && /\.js($|\?)/i.test(baseUrl)) {
       const dir = baseUrl.replace(/[^/]+(\?.*)?$/, "");
-      for (const m of text.matchAll(/"(\.\/[\w~.-]+\.(?:js|css|json|woff2?|png|jpe?g|webp|svg|wasm|glb|ktx2))"/g)) {
+      // A "./x.js" immediately followed by ":" is an import.meta.glob KEY
+      // (`{"./ticker.js":()=>…}`), naming a module already bundled here — not
+      // an address. Crawling it yields a 404 row for a file that never existed
+      // (lamalama: 9 phantom chunk URLs) [lamalama].
+      for (const m of text.matchAll(/"(\.\/[\w~.-]+\.(?:js|css|json|woff2?|png|jpe?g|webp|svg|wasm|glb|ktx2))"(?!\s*:)/g)) {
         try { addIfAsset(new URL(m[1], dir).href, urls); } catch {}
+      }
+      // 4d. Vite with an ABSOLUTE base writes __vite__mapDeps entries as
+      // "assets/x-hash.js" relative to the base, and resolves them through a
+      // helper `function(e){return"<base>"+e}` in the same chunk. Neither the
+      // root-relative nor the "./" shape sees them: 46 of 62 lazy chunks were
+      // absent from a "closed" mirror (lamalama) [lamalama]. Resolve against the
+      // literal base when both are present; fall back to the importing dir's
+      // parent (the layout Vite emits under base/assets/).
+      const deps = text.match(/__vite__mapDeps=\(i,m=__vite__mapDeps,d=\(m\.f\|\|\(m\.f=\[([^\]]*)\]/);
+      if (deps) {
+        const base = text.match(/return\s*["'`](\/[^"'`]*\/)["'`]\s*\+\s*[A-Za-z_$][\w$]*\s*}/)?.[1];
+        const root = base ? DOC_ORIGIN + base : dir.replace(/[^/]+\/$/, "");
+        for (const m of deps[1].matchAll(/["']([^"']+\.(?:js|css))["']/g)) {
+          try { addIfAsset(new URL(m[1], root).href, urls); } catch {}
+        }
       }
     }
 

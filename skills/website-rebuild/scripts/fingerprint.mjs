@@ -302,7 +302,19 @@ async function main() {
       continue;
     }
     let refererUsed = false;
-    if (r.body.length < 1024) {
+    // A tiny response that is nothing but `import"./x.js";` is a Vite ENTRY STUB, not a
+    // refusal page: the real bundle is one hop away (lamalama: main-*.js was 30 bytes,
+    // the "<1KB → refusal" heuristic fired and sent the Referer retry at a stub). Follow
+    // the hop once, then apply every check below to the target.
+    const stub = /^\s*import\s*["'`](\.\/[^"'`]+\.m?js)["'`];?\s*$/.exec(r.body.toString("utf8"));
+    if (r.body.length < 256 && stub) {
+      const hop = new URL(stub[1], url).href;
+      say(`- ℹ 响应 ${r.body.length}B 是 ESM 入口桩 \`${r.body.toString("utf8").trim()}\`——不是拒绝页；自动跟一跳 → ${hop}`);
+      saveArtifact(`bundle-${i + 1}-stub.js`, r.body, url);
+      await sleep(1100);
+      try { r = await getManual(hop); } catch (e) { say(`- 跟跳失败：${e.message}`); }
+    }
+    if (r.body.length < 1024 && !stub) {
       // <1KB 极可能是缺 Referer 的拒绝页（landonorris 32 字节假阴性）——补 Referer 重试
       const refDir = TARGET.slice(0, TARGET.lastIndexOf("/") + 1);
       say(`- ⚠ 响应 ${r.body.length}B <1KB，疑似拒绝页——补 Referer(${refDir}) 重试`);
