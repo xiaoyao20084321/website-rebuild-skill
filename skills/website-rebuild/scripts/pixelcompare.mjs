@@ -71,6 +71,7 @@
 // `node pixelcompare.mjs --a http://127.0.0.1:25002/ --b http://127.0.0.1:25001/ --name home`；1728×1080 加 `--format jpeg --quality 92`
 
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
   assertDistinctSides,
@@ -158,6 +159,9 @@ if (FORMAT !== 'png' && (!Number.isInteger(QUALITY) || QUALITY < 1 || QUALITY > 
 }
 const EXT = FORMAT === 'jpeg' ? 'jpg' : FORMAT;
 const SETTLE = Number(flag('settle', 6000));
+// --ready may leave its reason for not being ready in window.__why (a string);
+// it is printed only when the predicate never fires (lamalama: 900 pumped frames
+// of "never satisfied" with no way to ask which of 40 images it was waiting on).
 const READY = flag('ready', null);
 // --after-ready N: align on STATE first (the frame where --ready turns true on each side), THEN pump N more frames.
 // Waiting for an absolute pump count instead differs by one mount phase between the sides (darkroom /work: 1.8–2.5 at
@@ -191,6 +195,12 @@ const HOLD_AFTER = Number(flag('hold-after', '0')) || 0;
 //
 // --drive is an expression re-evaluated after EVERY pump chunk. Write it
 // idempotently: it will run many times.
+// ⛔ --drive is a SCROLL driver with a contract: it must record where it landed
+// in `window.__walkScroll = { tag, max, target, landed }` (pixel-walk's shape),
+// because the landing is what the two sides are asserted to share. A patch
+// that has nothing to land — a media freeze, a state poke — belongs in --seed
+// (one script, injected before load on both sides). Measured: a media patch
+// passed as --drive ran fine, then exited 6 as "no landing" (lamalama).
 const DRIVE = flag('drive', null);
 // --pump "dt,frames": drive the determinism shim from here instead of smuggling
 // a call into --ready. probe-shim.js's header says "from a CDP probe call
@@ -324,7 +334,25 @@ const evalJs = async (expression) => {
 
 await cdp.send('Runtime.enable');
 await cdp.send('Page.enable');
+// ⛔ Every capture starts CACHE-COLD. One browser photographs both sides in
+// turn, so without this the second capture runs warm: `img.complete` is true
+// at construction, the site takes its synchronous branch, and a panel that
+// opens "when the thumbnail has loaded" is open on B and closed on A.
+// Measured (lamalama, --self on one origin): a constant 5.8 at one checkpoint
+// that no amount of --after-ready moved — the two frames differed by cache
+// state, not by time. Under --self both sides are the same origin, so the
+// asymmetry is pure instrument; across sides it merely hides in "first visit".
+await cdp.send('Network.enable');
+await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+// ⭐ Fingerprint the protocol inputs. Two runs that disagree must be visibly
+// running different instruments: a stale duplicate --seed in a wrapper script
+// cost half a day of "why does 25% never get ready" (lamalama) — the two
+// seeds differed in one statement and nothing in the output said so.
+{
+  const fp = (v) => v ? `${createHash('sha256').update(v).digest('hex').slice(0, 10)} (${v.length} chars)` : 'none';
+  console.log(`[pixel] instrument — seed ${fp(SEED)} · ready ${fp(READY)} · drive ${fp(DRIVE)}${FREEZE_CSS ? ' · freeze-css' : ''} · cold-cache`);
+}
 if (SEED) await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SEED });
 if (FREEZE_CSS) {
   // Injected on new document so it applies before first paint, and re-applied
@@ -365,6 +393,7 @@ function shotFatal(label, err) {
 
 let landA = null, landB = null;
 async function capture(url, label) {
+  await cdp.send('Network.clearBrowserCache').catch(() => {});
   await cdp.send('Page.navigate', { url });
   // ⛔ --ready is NOT a pre-pump wait. Checking it before the pump can only ever
   // express "ready without any driving", and on a frozen page the states worth
@@ -438,6 +467,11 @@ async function capture(url, label) {
     // a marquee that starts 8–16 frames earlier on the single-bundle rebuild sits
     // entirely inside the default 6-frame chunk, and the two sides can only be
     // pinned to the same frame with a 1-frame chunk (darkroom /about 2.57 → 0.00).
+    // ⚠ The chunk is also how many VIRTUAL ticks pass per REAL round-trip: a media
+    // pipeline that needs N real network turns (hls.js: manifest → level → fragment
+    // → append → seek → fragment) burns N×chunk pumped frames before its element
+    // reports data. Measured (lamalama): chunk 5 left the hero <video> at
+    // readyState 1 for all 900 frames; chunk 1 had it ready at ~430.
     const chunk = Number(flag('chunk', '0')) > 0 ? Number(flag('chunk', '0')) : Math.max(1, Math.ceil(total / 40));
     const gap = Math.max(20, Math.floor(SETTLE / Math.ceil(total / chunk)));
     let readyAt = null;
@@ -468,6 +502,12 @@ async function capture(url, label) {
       // of the loading screen, and two of those agree perfectly.
       console.error(`[pixel] FATAL: ${label} never satisfied --ready within ${total} pumped frame(s).`);
       console.error(`        Raise --pump frames or --settle, or fix the predicate — do NOT compare this frame.`);
+      // ⭐ A predicate that never fires is a question, and the page is the only one
+      // who can answer it. A --ready may leave its reason in window.__why (a string:
+      // which image, which video, which flag); printed here, never elsewhere.
+      const why = await evalJs(`String(window.__why ?? '')`).catch(() => '');
+      if (why) console.error(`        window.__why: ${String(why).slice(0, 400)}`);
+      else console.error(`        (the predicate left nothing in window.__why — set it to the blocker's name and this line names it)`);
       chrome.reap();
       process.exit(6);
     }  } else {
@@ -567,8 +607,10 @@ if (DRIVE || landA || landB) {
   console.log(`[pixel] measured at — A: ${fmt(landA)}   B: ${fmt(landB)}`);
   if (DRIVE && (!landA || !landB)) {
     console.error(`[pixel] FATAL: --drive was given but at least one side recorded no landing.`);
-    console.error(`        The driver never ran, or never found anything to drive. Any number below`);
-    console.error(`        is a comparison of two states nobody chose.`);
+    console.error(`        The driver never ran, never found anything to drive, or never wrote its landing:`);
+    console.error(`        a --drive must set window.__walkScroll = { tag, max, target, landed } (pixel-walk's shape).`);
+    console.error(`        A patch with nothing to land (media freeze, state poke) belongs in --seed, not --drive.`);
+    console.error(`        Any number below is a comparison of two states nobody chose.`);
     chrome.reap();
     process.exit(6);
   }

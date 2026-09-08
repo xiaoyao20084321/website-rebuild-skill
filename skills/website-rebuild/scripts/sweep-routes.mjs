@@ -82,6 +82,12 @@ const ALLOW_ERRORS = flag("allow-errors", null) ? new RegExp(flag("allow-errors"
 // is registered. What is not registered stays red.
 const ALLOW_FAILURES = flag("allow-failures", null) ? new RegExp(flag("allow-failures", null)) : null;
 const OUT = flag("out", null);
+// A directory here used to surface as EISDIR from writeFileSync AFTER the whole
+// sweep had run (lamalama: 9 routes, 56 s, then a stack trace). Refuse up front.
+if (OUT && (await import("node:fs")).existsSync(OUT) && (await import("node:fs")).statSync(OUT).isDirectory()) {
+  console.error(`FATAL: --out ${OUT} is a directory; give the report FILE path (e.g. ${OUT.replace(/\/$/, "")}/sweep.json).`);
+  process.exit(2);
+}
 const W = Number(flag("width", "1280")), H = Number(flag("height", "800"));
 
 let routes = [];
@@ -278,6 +284,7 @@ const secs = ((Date.now() - t0) / 1000).toFixed(0);
 if (OUT) {
   const tsv = ["ROUTE\tVERDICT\tERRORS\tFAILURES\tEXTERNAL\tALLOWED_EXTERNAL\tALLOWED_FAILURES\tLIFECYCLE\tEVAL",
     ...rows.map((r) => [r.route, r.verdict, r.errors, r.failures, r.external, r.allowedExternal, r.allowedFailures, r.lifecycle, r.eval].join("\t"))].join("\n") + "\n";
+  (await import("node:fs")).mkdirSync(path.dirname(path.resolve(OUT)), { recursive: true }); // a fresh docs/<run>/ must not cost the sweep
   writeFileSync(path.resolve(OUT), tsv);
   console.log(`  -> ${OUT}`);
 }

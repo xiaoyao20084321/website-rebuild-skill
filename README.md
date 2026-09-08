@@ -223,6 +223,7 @@ cp -R skills/website-rebuild ~/.claude/skills/website-rebuild
 | Guillermo Rauch's blog | [rauchg.com](https://rauchg.com/) | ⭐ **首个 C1（RSC）重构式逆向**——从 flight 流重构一个可构建的 Next 工程，**18/18 路由语义门一致**；也是**盲逆向对答案**的诞生地：结构 ≈95%、行为 ≈98%，7 个依赖版本从字节证据精确命中 |
 | basement.studio | [basement.studio](https://basement.studio/) | 重 WebGL 设计工作室官网（Next 16.3 + React 19 流式 + three/R3F + Sanity），C1+C2 混合周级战役，**功能面已收口**：flight 语义门 **PASS 144/144**、模块双射 50 对零违背；3D 办公室场景、16.5k 行 ScreenUI 街机引擎、双 offscreen worker、mux/tweet 惰性家族全部经**逐字图 + 转写微运行时**（v0.3.7 第四交付形态的诞生地）跑进重建工程，12 路由清扫 10 CLEAN |
 | First Launch 七點半的太空人 | —（已消失） | ⭐ **首个走完 L3 全程的 X 类死站**——2013 Awwwards 站（jQuery + skrollr 滚动叙事），从 Wayback 锚点 2015-01 重建：27 永久洞如实登记，数值门 **9,856 样本全等**，像素 7/9 检查点精确零，自包含交付物断网复活 |
+| Lama Lama | [lamalama.com](https://lamalama.com/) | 阿姆斯特丹创意 agency（WordPress 外壳 + Vite scope-hoisted bundle + Bunny HLS 2.4 GB）；像素门第一次要**等媒体到达**——`autoplay` 属性绕过 `play()` 补丁、HLS 首片 PTS 落洞、hls.js 停滞检测反噬，协议表达式单一来源 + 指纹由此而来；9 路由 × 5 档跨侧 0.00 |
 
 ### 边界样本与死站抢救
 
@@ -278,7 +279,7 @@ README.en.md               # 英文版 README
 
 版本随真实复刻项目递进：每个版本发布的功能与修复，都先在至少一个完整项目上验证过。
 
-完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.22**：浏览器道——"逐像素一致"落在 pixelcompare 的 0.00 上、CLEAN 落在 probe 上，这两道门只有真起 Chrome 才存在，此前零反例，而 0.3.18 换掉了它们脚下的整个 CDP 底座。现在第二条道 `npm run test:browser` 真起无头 Chrome 对 loopback 纯色网格夹具驱动判决：0.00 / 换一格红 / 同 URL 退 3 / 空帧退 5 / `--self` 带宽 / 404 / console.error / 零外联 / 错侧退 3，共 16 条；变异三处五抓。lenprefix 的"无可查"分成空目录 FATAL 5 与不适用 SKIPPED（不再说 PASS）。离线道 200。
+完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.23**：lamalama 战役回哺——像素门第一次要**等媒体到达**：`--ready` 可以把没就绪的原因留在 `window.__why`（pixelcompare 在 never satisfied 时打印），每次跑打 seed/ready/drive 指纹（一份陈旧的重复 seed 吃掉半天），`--drive` 的落点合同写进报错，pixel-walk 转发整套协议；determinism 新增 `autoplay` 属性绕过 `play()` 补丁、HLS 首片 PTS 落洞、谎报 `paused` 反噬 hls.js 三条；serve `--stub-json` 端点桩；加上 M0/M2 的十一条实撞修复。离线 235 + 浏览器 21。
 
 ## 贡献
 

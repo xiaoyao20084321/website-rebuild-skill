@@ -41,7 +41,7 @@ const grid = (recolour = {}) => {
 const blank = `<!doctype html><html><body style="margin:0;background:#3355aa"><div style="position:absolute;left:10px;top:10px;width:100px;height:100px;background:#fff"></div></body></html>`;
 const PA = 29980, PB = 29981;
 const A = W(path.join(TMP, "a"), {
-  "index.html": grid(),
+  "index.html": grid(), "tall.html": grid() + '<div style="height:3000px"></div>',
   "diff.html": grid(),
   "blank.html": blank,
   "404.html": grid() + `<img src="/missing.png">`,
@@ -62,6 +62,7 @@ try {
   // ---------------------------------------------------------------- pixelcompare
   const same = px("same", ["--a", `${SA.base}/`, "--b", `${SB.base}/`]);
   green("pixelcompare — the same page from two processes measures 0.00 (v0.3.22)", same, /./);
+  truthy("pixelcompare — …and the run names its instrument: seed/ready/drive fingerprints + cold-cache (v0.3.23)", /\[pixel\] instrument — seed none · ready none · drive none · cold-cache/.test(same.out), same.out.slice(0, 300));
   eq("pixelcompare — …and metric.json records meanAbsDiff 0 (v0.3.22)", metric(path.join(TMP, "px-same"), "same")?.meanAbsDiff, 0);
 
   const diff = px("diff", ["--a", `${SA.base}/diff.html`, "--b", `${SB.base}/diff.html`, "--max-mean", "0"]);
@@ -79,6 +80,18 @@ try {
   green("pixelcompare — the same URL twice under --self is allowed: a BAND SAMPLE, tagged as such (v0.3.22)", band, /BAND SAMPLE, NOT A VERDICT/);
   truthy("pixelcompare — …--max-mean is ignored under --self: a band sample is not a gate result (v0.3.22)", /ignored under --self/.test(band.out), band.out.slice(-200));
   eq("pixelcompare — …the band file is kind self-band (v0.3.22)", JSON.parse(readFileSync(path.join(TMP, "px-band/metric.json"), "utf8")).kind, "self-band");
+
+  // ---------------------------------------------------------------- pixel-walk (v0.3.23)
+  const walk = (name, extra) => run("scripts/pixel-walk.mjs", ["--steps", "2", "--pump", "16.7,30", "--out", path.join(TMP, "walk-" + name), "--self", ...extra]);
+  const seeded = walk("seeded", ["--a", `${SA.base}/tall.html`, "--b", `${SA.base}/tall.html`, "--seed", "window.__s=1", "--ready", "window.__s===1"]);
+  green("pixel-walk — --seed is forwarded: a --ready only the seed can satisfy passes at both checkpoints (v0.3.23)", seeded, /walk-100/);
+  red("pixel-walk — …and without the seed the same --ready never fires: the pass above came from the forwarded seed (v0.3.23)",
+    walk("unseeded", ["--a", `${SA.base}/tall.html`, "--b", `${SA.base}/tall.html`, "--ready", "window.__s===1"]), /never satisfied --ready|FAIL/, 5);
+  red("pixelcompare — a --drive that records no landing exits 6 and names the contract: window.__walkScroll (v0.3.23)",
+    px("nodrive", ["--a", `${SA.base}/`, "--b", `${SB.base}/`, "--pump", "16.7,5", "--drive", "1"]), /window\.__walkScroll/, 6);
+
+  red("pixelcompare — a --ready that never fires exits 6 and prints the reason the predicate left in window.__why (v0.3.23)",
+    px("why", ["--a", `${SA.base}/`, "--b", `${SB.base}/`, "--pump", "16.7,5", "--ready", "(window.__why='waiting on hero.jpg', false)"]), /window\.__why: waiting on hero\.jpg/, 6);
 
   // ---------------------------------------------------------------- probe
   green("probe — a clean page is CLEAN, exit 0 (v0.3.22)", probe(`${SA.base}/`), /CLEAN/);

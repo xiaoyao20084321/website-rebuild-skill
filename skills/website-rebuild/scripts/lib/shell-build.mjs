@@ -82,7 +82,12 @@ export function localizeShapes(text, host, to, onHit = () => {}) {
   return restore(text
     .replace(new RegExp(`https?://${h}(?=/)`, "g"), hit("absolute", to))
     .replace(new RegExp(`https?://${h}(?!/)`, "g"), hit("absolute-bare", bare))
-    .replace(new RegExp(`https?:\\\\/\\\\/${h}`, "g"), hit("escaped-absolute", toEsc))
+    // Escaped spelling split the same way as the plain one: a bare `https:\/\/host"`
+    // is the home page (→ `\/`), not "" — the build layer wrote `"site_url":""`
+    // while serve.mjs left the value alone, and the two sides disagreed on one
+    // input for the second time (chungiyoo was the unescaped form) [lamalama].
+    .replace(new RegExp(`https?:\\\\/\\\\/${h}(?=\\\\/)`, "g"), hit("escaped-absolute", toEsc))
+    .replace(new RegExp(`https?:\\\\/\\\\/${h}(?!\\\\/)`, "g"), hit("escaped-absolute-bare", toEsc || "\\/"))
     .replace(new RegExp(`https?:${U_RE}${U_RE}${h}(?=${U_RE})`, "gi"), hit("unicode-absolute", toU))
     .replace(new RegExp(`https?:${U_RE}${U_RE}${h}(?!${U_RE})`, "gi"), hit("unicode-absolute-bare", toU || U))
     .replace(new RegExp(`(?<!:)\\\\/\\\\/${h}`, "g"), hit("escaped-protocol-relative", toEsc))
@@ -157,13 +162,31 @@ export function transformPage(html, cfg, { head = true } = {}) {
   // 'object' of undefined) while every request stayed 200. §4.10's rule, one
   // ring further in: display text was content, and so is parsed data. The
   // island is carved out before localization and restored verbatim after.
+  // T-DATA-KEEP: every DATA island is carved out, not just Nuxt's. JSON-LD
+  // (`application/ld+json`: the page's own url/@id are STATEMENTS about where
+  // it lives, not addresses the browser fetches) and speculation rules
+  // (`type="speculationrules"`: href_matches patterns are program input) sit in
+  // the same class as __NUXT_DATA__ — dom-shell-strategies.md §6 coin 0 says so
+  // and the code kept only the Nuxt spelling (lamalama: 2–3 JSON-LD islands per
+  // page would have had their url/@id localized to "/"). Sites add more via
+  // cfg.keepIslands = [RegExp]; each kept island bumps T-DATA-KEEP so the
+  // ledger shows the carve-out fired.
   const islands = [];
-  out = out.replace(/(<script[^>]*id="__NUXT_DATA__"[^>]*>)([\s\S]*?)(<\/script>)/g, (m0, open, body, close) => {
-    islands.push(body);
-    return open + "\u0000NUXTDATA" + (islands.length - 1) + "\u0000" + close;
-  });
+  const ISLAND_RES = [
+    /(<script[^>]*id="__NUXT_DATA__"[^>]*>)([\s\S]*?)(<\/script>)/g,
+    /(<script[^>]*type="application\/ld\+json"[^>]*>)([\s\S]*?)(<\/script>)/g,
+    /(<script[^>]*type="speculationrules"[^>]*>)([\s\S]*?)(<\/script>)/g,
+    ...(cfg.keepIslands || []),
+  ];
+  for (const re of ISLAND_RES) {
+    out = out.replace(re, (m0, open, body, close) => {
+      islands.push(body);
+      bump("T-DATA-KEEP");
+      return open + "\u0000ISLAND" + (islands.length - 1) + "\u0000" + close;
+    });
+  }
   out = (hasFlight(out) ? rewriteFlight(out, localizeAll) : null) ?? localizeAll(out);
-  out = out.replace(/\u0000NUXTDATA(\d+)\u0000/g, (_, i) => islands[Number(i)]);
+  out = out.replace(/\u0000ISLAND(\d+)\u0000/g, (_, i) => islands[Number(i)]);
 
   // --- site-specific transforms ---------------------------------------------
   // ⛔ THESE GO THROUGH THE LENGTH-AWARE PATH TOO. It is not only localisation
@@ -210,6 +233,7 @@ export function transformPage(html, cfg, { head = true } = {}) {
 /** Every transform id the table can produce, builder and gate agreeing. */
 export const transformIds = (cfg) => [
   "T-LOCALIZE",
+  "T-DATA-KEEP",
   ...(cfg.transforms || []).map((t) => t.id),
   ...(cfg.notice ? ["T-NOINDEX"] : []),
 ];

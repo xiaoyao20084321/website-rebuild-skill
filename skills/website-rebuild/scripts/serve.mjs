@@ -6,7 +6,7 @@
 //   node serve.mjs --side rebuild --root dist            # the rebuild
 //   node serve.mjs --side mirror --root mirror [--ext-hosts cdn.x.com,fonts.gstatic.com]
 //                  [--stub-ext-hosts telemetry.example.com] [--origin-host example.com] [--port N]
-//                  [--host 127.0.0.1] [--fallback-root dir,dir] [--query-ignore v,cb | --query-only w,h] [--rewrite FROM::TO]...
+//                  [--host 127.0.0.1] [--fallback-root dir,dir] [--query-ignore v,cb | --query-only w,h] [--rewrite FROM::TO]... [--stub-json PATH::FILE]...
 //   PORT=3200 SERVE_ROOT=mirror node serve.mjs    # explicit port still wins
 //
 // PORTS AND IDENTITY (scripts/lib/ports.mjs — read its header once):
@@ -58,7 +58,7 @@
 //      rewritten into /ext/ but deliberately not mirrored).
 //
 // 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`serve.mjs`）
-// 零依赖静态服务器（MIME/Range/服务层改写/重定向回放），兼任源站参照服。`--rewrite FROM::TO` 是**登记式字面量替换**，为的是一类本地化触及不到的东西——**源程序按自己的域名分支**（`location.hostname=="x.com" && (CDN=...)`，镜像不在那个域名上于是整个子系统走空路径）；**首次命中打印**，因为沉默与生效此前无法区分。`--fallback-root` 让复刻侧只放产出、资产全部从只读镜像读（`asset-management.md` 的不复制策略）——⭐ v0.3.15 起是**回落链** `--fallback-root mirror-negotiated,mirror`，协商变体的独立记账树压在只读镜像之上、两侧同链；⛔ **桩主机的 DSN 保持是 DSN**：`https://<key>@oNNN.ingest.us.sentry.io/<id>` 改写成 `http://<key>@127.0.0.1:<port>/ext/<host>/<id>`，SDK 正常初始化、信封打进桩（此前改成裸路径 → 两侧 console `Invalid Sentry Dsn`，CLEAN 门红而无静态门能见）；**未知旗标响亮失败**——被静默忽略的旗标是一次没人知道的降级
+// 零依赖静态服务器（MIME/Range/服务层改写/重定向回放），兼任源站参照服。`--rewrite FROM::TO` 是**登记式字面量替换**，为的是一类本地化触及不到的东西——**源程序按自己的域名分支**（`location.hostname=="x.com" && (CDN=...)`，镜像不在那个域名上于是整个子系统走空路径）；**首次命中打印**，因为沉默与生效此前无法区分。`--fallback-root` 让复刻侧只放产出、资产全部从只读镜像读（`asset-management.md` 的不复制策略）——⭐ v0.3.15 起是**回落链** `--fallback-root mirror-negotiated,mirror`，协商变体的独立记账树压在只读镜像之上、两侧同链；⛔ **桩主机的 DSN 保持是 DSN**：`https://<key>@oNNN.ingest.us.sentry.io/<id>` 改写成 `http://<key>@127.0.0.1:<port>/ext/<host>/<id>`，SDK 正常初始化、信封打进桩（此前改成裸路径 → 两侧 console `Invalid Sentry Dsn`，CLEAN 门红而无静态门能见）；**未知旗标响亮失败**——被静默忽略的旗标是一次没人知道的降级`--stub-json PATH::FILE`（可重复）是**端点桩**：外壳 POST 回源站的端点（admin-ajax、表单网关）按源站自己的 JSON 合同在服务层应答、任意方法、不转发；否则落进 404 模板、`res.json()` 抛错、页面走失败分支而控制台不说为什么。同样首次命中打印（lamalama D-5）。
 // 零依赖静态服务器：MIME 补全（含 HLS 阶梯与 `.mov`）、Range、redirects.tsv 重定向回放（FROM 写绝对 URL 或裸路径都能命中）、`/ext/<host>/` 服务层改写（镜像磁盘神圣不改）、`--stub-ext-hosts` 把"改写进 `/ext/` 但故意不镜像"的遥测 host 回 JS stub（否则要么真外联、要么 404）、`?__probe` 注入 probe-shim、404.html 回放。**`--side mirror\|rebuild` 必填**（除非显式给 `--port`/`PORT`）：它决定端口（…1 镜像 / …2 复刻）并写进每个响应的 `x-wrs-identity`，端口被占直接退 3 并点名占用方。三条镜像层修复：① **查询感知取文件**（`lib/urlpath.mjs`，读镜像里的 `urlpath-policy.json`）——按 pathname 取文件会拿一个变体回答所有 `?width=`，页面照渲染，零 404 门在错镜像上变绿；② **host 改写覆盖四种写法**——普通 / 协议相对 / JSON 转义（`https:\/\/host\/` 与 `\/\/host\/`）/ **裸主机常量**（`"https://otlp.example.com"` 后面代码自己拼路径）；新增 `--origin-host` 把源站对自己的绝对/协议相对自引用改写成根相对（否则离线镜像会向线上真站要盘上已有的图）；③ **回放前跳过本地化后自指的重定向**（源站常有 http→https 同路径条目，两侧本地化后同路径 → `ERR_TOO_MANY_REDIRECTS`，把真实在盘的资产打死）。v0.3.15（raycastkbd）两条：④ **`--fallback-root` 是回落链**（`--fallback-root mirror-negotiated,mirror`，左到右第一个有文件的 root 应答——协商变体的独立记账树压在只读镜像之上，两侧同链）；⑤ **桩主机的 DSN 保持是 DSN**：`https://<key>@oNNN.ingest.us.sentry.io/<id>` 改写成 `http://<key>@127.0.0.1:<port>/ext/<host>/<id>`（此前 userinfo 归一化后再本地化成裸路径，Sentry `new Dsn()` 拒收 → 两侧 console `Invalid Sentry Dsn`，CLEAN 门红而无静态门能见；现在 SDK 按源站那样初始化，信封打进 `/ext/<host>/api/<id>/envelope/` 的桩）。
 // `node serve.mjs --side mirror --root mirror --origin-host example.com`；复刻侧 `node serve.mjs --side rebuild --root dist`；有遥测时加 `--stub-ext-hosts www.googletagmanager.com,www.clarity.ms`
 
@@ -100,7 +100,7 @@ import { cli } from "./lib/cli.mjs";
 cli({
   known: [
     "host", "port", "root", "fallback-root", "side", "origin-host", "ext-hosts",
-    "stub-ext-hosts", "query-ignore", "query-only", "rewrite",
+    "stub-ext-hosts", "query-ignore", "query-only", "rewrite", "stub-json",
   ],
   file: import.meta.url,
 });
@@ -413,6 +413,35 @@ function unicodeSlash(text, host, to) {
 // scripts verify the server's identity with Node's fetch, and Node does not
 // share Chrome's resolver rules, so the two halves would disagree about what
 // they are talking to.
+// --stub-json PATH::FILE (repeatable): an ORIGIN ENDPOINT the shell posts to
+// (WordPress admin-ajax, a newsletter handler, a form gateway), answered here
+// with FILE as application/json for ANY method — by the origin's own response
+// contract, never forwarded. Without it the request falls through to the 404
+// template, `res.json()` throws, and the page shows its failure branch: a
+// working form on the origin becomes a broken one on the rebuild, and nothing
+// in the console says why. This is a §6 deviation (service-layer stub), so the
+// FIRST HIT IS LOGGED like --rewrite: a stub that never fires must not pass for
+// one that answered. The path is matched exactly; the query is ignored (the
+// action lives in the POST body on WordPress, in the query on some others —
+// both reach the same file). lamalama D-5.
+const STUB_JSON = args
+  .map((a, i) => (a === "--stub-json" ? args[i + 1] : null))
+  .filter(Boolean)
+  .map((spec) => {
+    const at = spec.indexOf("::");
+    if (at < 0) {
+      console.error(`FATAL: --stub-json needs PATH::FILE, got ${JSON.stringify(spec)}`);
+      process.exit(2);
+    }
+    const file = path.resolve(spec.slice(at + 2));
+    let body;
+    try { body = fs.readFileSync(file, "utf8"); JSON.parse(body); } catch (e) {
+      console.error(`FATAL: --stub-json ${spec.slice(0, at)}: ${file} is not a readable JSON file (${e.message})`);
+      process.exit(2);
+    }
+    return { path: spec.slice(0, at), file, body, hits: 0 };
+  });
+
 const REWRITES = args
   .map((a, i) => (a === "--rewrite" ? args[i + 1] : null))
   .filter(Boolean)
@@ -477,6 +506,10 @@ function rewriteText(text, ext) {
     // the build layer disagree on the same input.
     text = text.replace(new RegExp(`https?://${h.replace(/\./g, "\\.")}(?![/\\w.-])`, "g"), "/");
     text = text.replaceAll(`https:\\/\\/${h}\\/`, "\\/").replaceAll(`http:\\/\\/${h}\\/`, "\\/");
+    // The ESCAPED no-path form (`"site_url":"https:\/\/host"`) is the home page too:
+    // localise to `\/`, exactly what lib/shell-build.mjs does for the build layer —
+    // the two implementations disagreed on this one shape (lamalama).
+    text = text.replace(new RegExp(`https?:\\\\/\\\\/${h.replace(/\./g, "\\.")}(?![\\\\\\w.-])`, "g"), "\\/");
     text = text.replaceAll(`\\/\\/${h}\\/`, "\\/");
     // Shape 6: UNICODE-ESCAPED slashes. Serialised payloads escape "/" as
     // \u002F so the blob can never contain a literal "</script>" — Nuxt's
@@ -748,6 +781,15 @@ const server = http.createServer(async (req, res) => {
       }
       res.writeHead(redirect.code, { location: to, "cache-control": "no-cache" });
       return res.end();
+    }
+
+    // 1b. registered endpoint stubs: the origin's JSON contract, any method
+    const stub = STUB_JSON.find((x) => x.path === url.pathname);
+    if (stub) {
+      if (stub.hits++ === 0) console.log(`  [stub-json] first hit: ${req.method} ${url.pathname}${url.search.slice(0, 60)} -> ${path.basename(stub.file)}`);
+      req.resume(); // drain a POST body we never read
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      return res.end(stub.body);
     }
 
     // 2. stub prefixes (unmirrored analytics proxies): keep the console quiet

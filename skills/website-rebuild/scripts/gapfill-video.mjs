@@ -47,8 +47,10 @@
  * `node gapfill-video.mjs --master https://cdn.x.com/vp/<id>/<id>.m3u8 --origin https://example.com`（`--dry-run` 先看阶梯全貌）
  */
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
-import { dirname, join, relative, extname } from 'node:path';
+import { dirname, join, relative, extname, resolve } from 'node:path';
 import { BROWSER_UA } from './lib/negotiate.mjs';
+import { sha256 } from './lib/hash.mjs';
+import { writeInventory } from './lib/ledger.mjs';
 import { cli } from './lib/cli.mjs';
 
 cli({
@@ -98,7 +100,9 @@ if (!MASTERS.length) {
   process.exit(2);
 }
 
-const OUT = join(process.cwd(), flag('out', 'mirror'));
+// resolve, not join: an ABSOLUTE --out used to be glued under cwd (the same bug
+// mirror-site fixed in v0.3.16), so the ledger landed in <cwd>/<abs-path> [lamalama].
+const OUT = resolve(flag('out', 'mirror'));
 const ORIGIN = (flag('origin', null) || new URL(MASTERS[0]).origin).replace(/\/+$/, '');
 const ORIGIN_HOST = new URL(ORIGIN).hostname;
 const REFERER = flag('referer', ORIGIN + '/');
@@ -158,11 +162,16 @@ try {
   console.warn(`[warn] no manifest at ${relative(process.cwd(), MANIFEST_PATH)} — one will be created`);
 }
 
-let ledgerAdds = 0;
-function record(url, p, bytes, type) {
+let ledgerAdds = 0, repaired = 0;
+// A ledger row is URL -> path, bytes, sha256, type (mirroring.md §0 principle 3).
+// This script used to write rows WITHOUT sha256 and never touched inventory.tsv,
+// so a mirror it backfilled failed verify-mirror's ledger gate on every segment
+// (lamalama: 4,741 rows) — the one ledger writer that skipped lib/ledger.mjs.
+function record(url, p, bytes, type, sha) {
   manifestData.files[url] = {
     path: relative(OUT, p),
     bytes,
+    sha256: sha,
     type: type || '',
     // Provenance: these URLs are runtime-only, never linked in crawled markup.
     source: 'gapfill-video',
@@ -176,7 +185,7 @@ async function save(url, buf, type) {
     await mkdir(dirname(p), { recursive: true });
     await writeFile(p, buf);
   }
-  record(url, p, buf.length, type);
+  record(url, p, buf.length, type, sha256(buf));
   return p;
 }
 
@@ -250,9 +259,14 @@ async function walkPlaylist(url, depth) {
   let text;
   // The master is normally already mirrored — read it rather than refetch it.
   if (!FORCE && (await exists(p))) {
-    text = await readFile(p, 'utf8');
+    const buf = await readFile(p);
+    text = buf.toString('utf8');
     playlistsFromDisk++;
     console.log(`[playlist] ${'  '.repeat(depth)}${url.slice(0, 110)} (on disk, ${text.length}b)`);
+    // Same repair as the segment loop: a playlist row written without sha256
+    // (or a playlist on disk with no row at all) gets its hash from the bytes.
+    const row = manifestData.files[url];
+    if (!row || !row.sha256) { record(url, p, buf.length, row?.type || '', sha256(buf)); repaired++; }
   } else {
     try {
       const { buf, type } = await get(url);
@@ -290,7 +304,15 @@ await Promise.all(
       const url = queue[cursor++];
       const p = localPathFor(url);
       if (!FORCE && (await exists(p))) {
-        skipped++;
+        // On disk already. If its row is missing or has no sha256 (rows written
+        // before this script recorded hashes), repair the row from the bytes on
+        // disk instead of downloading again.
+        const row = manifestData.files[url];
+        if (!row || !row.sha256) {
+          const buf = await readFile(p);
+          record(url, p, buf.length, row?.type || '', sha256(buf));
+          repaired++;
+        } else skipped++;
         continue;
       }
       if (DRY_RUN) {
@@ -317,14 +339,16 @@ await Promise.all(
 if (!DRY_RUN && ledgerAdds) {
   if (!manifestExisted) await mkdir(dirname(MANIFEST_PATH), { recursive: true });
   await writeFile(MANIFEST_PATH, JSON.stringify(manifestData, null, manifestIndent) + '\n');
+  // inventory.tsv is derived from the manifest by the one implementation in lib/ledger.mjs
+  await writeInventory(OUT, manifestData.files);
 }
 
 console.log(
   `\nvideo gapfill${DRY_RUN ? ' (dry run)' : ''}: ` +
     `${playlistsFetched} playlist(s) fetched, ${playlistsFromDisk} already mirrored, ` +
     `${downloaded} segment(s) ${DRY_RUN ? 'pending' : 'downloaded'}, ${skipped} already present, ` +
-    `${failures.length} failed. ` +
-    (DRY_RUN ? 'Manifest untouched.' : `${ledgerAdds} manifest entries added.`)
+    `${failures.length} failed${repaired ? `, ${repaired} row(s) repaired from disk (sha256)` : ''}. ` +
+    (DRY_RUN ? 'Manifest untouched.' : `${ledgerAdds} manifest entries written; inventory.tsv regenerated.`)
 );
 if (failures.length) {
   for (const [u, m] of failures) console.error(`  FAIL ${m} ${u}`);

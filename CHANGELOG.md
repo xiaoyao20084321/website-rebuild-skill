@@ -1,5 +1,39 @@
 # 更新记录
 
+## v0.3.23 — lamalama 战役回哺：像素门学会等媒体到达并说出为什么；十七条实撞修复（离线 235 + 浏览器 21）
+
+一个 WordPress 外壳 + Vite scope-hoisted bundle + Bunny HLS（111 个 master、2.4 GB）的 agency 站，从 Step 0 走到 M(n)/M(n+1)，
+每条实撞先修项目拷贝、验证后上游。按阶段：
+
+**M0 镜像（`5875528` `80db966` `d7e5fd9` `0bcf4a0` `dc74ccf` `c0e1722`）**：
+- mirror-site 认**绝对同源 href**（`href="https://host/x/"` 此前被当外链，爬虫只爬种子）；非 2xx 页记 `error` 不落盘。
+- extract-refs 忽略 `import.meta.glob` 的键（`"./x.js":` 是对象键不是 import）；解析 Vite 绝对 base 的 `__vite__mapDeps`（46 个 chunk 曾对闭包门失明）。
+- beautify-bundle 解析自查认 ES 模块（脚本模式拒掉每个 Vite chunk 就没有坐标系）；README 账本跨运行累积。
+- fingerprint 认 30 B 的 ESM 入口桩并自动跟一跳。scope-and-fingerprint §3 的 D 信号加"**页本体与行为主体分别量**"限定词——WordPress 页 + 行为全在客户端 bundle 是 B 不是 D。
+- gapfill-video 账本行带 sha256、在盘行从磁盘补哈希不重下、经 lib/ledger 重写 inventory、绝对 `--out` 用 resolve。
+- verify-mirror 回源抽样回放账本行的**协商 profile**（源站按 Accept 发 WebP/JPEG 却只声明 `Vary: Accept-Encoding`，`*/*` 抽样把 1/8 报成假漂移）。
+- sweep-routes `--out` 是目录时开跑前 FATAL 2；父目录自动建。
+
+**M2 外壳（`70c2eee` `646f402`）**：shell-build `T-DATA-KEEP` 保真所有数据岛（JSON-LD / speculationrules / `cfg.keepIslands`），不只 `__NUXT_DATA__`；
+两份本地化实现（构建 / 服务层）对齐转义裸主机 `"https:\/\/host"` → `\/`，奇偶性 selftest 钉住。
+
+**M(n-1) 像素门（本条最大的一块）**：
+- **`--ready` 可以留言**：判据把没就绪的原因写进 `window.__why`，pixelcompare 在 "never satisfied" 时原样打印。此前 900 帧的沉默里没有任何办法问"你在等哪张图"。
+- **每次跑都打仪器指纹**：开头一行 `instrument — seed <sha10> (N chars) · ready … · drive …`。一份陈旧的重复 `--seed`（差一条语句）吃掉半天，输出里没有一行说两次跑的仪器不同。
+- **每一拍都冷缓存**：一个浏览器轮流拍两侧，第二拍缓存已热，站点在 `img.complete` 上走同步分支（"缩略图到了才展开"的面板 B 开 A 关，同侧自比一格恒定 5.8，`--after-ready` 加到 600 也不动）。`Network.setCacheDisabled` + 每次导航前 `clearBrowserCache`，指纹行标 `cold-cache`。
+- **走位 seed 关闭 scroll restoration**：同 URL 连拍时 Chrome 在 load 前恢复上一拍的落点，`--self` 第二拍从别处起跑、站点 init 的观察者触发不同——带宽里一格恒定 3.7，跨侧却是 0（URL 不同）。pixel-walk 的 seed 第一句 `history.scrollRestoration = "manual"`。
+- **`--drive` 的合同写进报错与头注**：它是滚动驱动器，必须写 `window.__walkScroll` 落点；媒体补丁这类"没有落点"的东西属于 `--seed`。
+- **pixel-walk 转发整套协议**：`--seed` / `--freeze-css` / `--after-ready` / `--chunk` 此前不转发——巡航把调用者刚移除的熵重新量了一遍（带宽 0.16 → 1.8）；用户 seed 排在滚动 seed 前，一份注入；`window.__why` 行也转发。
+- **`--chunk` 是"每个真实往返过几个虚拟 tick"**：hls.js 要 N 个真实往返才出画面，`--chunk 5` 下 900 帧 `<video>` 仍 `readyState 1`，`--chunk 1` 约 430 帧就绪。写进头注与 determinism §7.1。
+- determinism §7.1 另加两条：缓存状态是仪器条件（每拍都冷；`localStorage` 起跑清空）；到达判据看"有图"（`naturalWidth>0||complete`）不看 `complete`，喂 GL 的媒体可见性不看 `opacity`，脱离 DOM 的预载器只能用更长的 `--after-ready`。§2.6 新增：**`autoplay` 属性不经过 `play()`**（只补丁 `play()` 拦不住，要在 `document` 捕获相接媒体事件）；**HLS 首片 PTS 偏移**（0.021 起，seek 到 0 落洞永不完成——`currentTime` setter 把目标搬到第一段缓冲起点）；**谎报 `paused=false` 会触发 hls.js 停滞 nudge**（kimi 的补丁在 hls.js 站上反噬）。§7.1 新增"协议表达式单一来源 + 指纹"。实证全部在 case-studies/determinism.md。
+
+**M2b 服务层**：serve **`--stub-json PATH::FILE`**（可重复）——外壳 POST 回源站的端点（admin-ajax、表单网关）按源站自己的 JSON 合同在服务层应答、任意方法、不转发，首次命中打印；此前落进 404 模板、`res.json()` 抛错、表单走失败分支而控制台不说为什么。
+
+**selftest**：离线 224 → 235（pixel-walk `--help` 四个转发旗标 + 未知旗标 FATAL 2；serve `--stub-json` 六条：POST/GET 同路径 200 JSON、邻路径 404、缺 `::` 与文件不存在各 FATAL 2）；
+浏览器道 16 → 21（`--seed` 转发由"只有 seed 能满足的 `--ready`"证明、去掉 seed 同判据退 5；`--drive` 无落点退 6 并点名 `window.__walkScroll`；`--ready` 永不成立时打印 `window.__why`；指纹行；夹具新增 `tall.html` 让巡航有得滚）。
+
+**范围外（登记）**：策略 D 的几何门（webgl_image 宿主矩形 vs GL quad）与 M(n) 的用户决断（D-6 / D-8）留在项目侧；name-modules 是 webpack 容器形态的工具，拼接式分解的命名走 `docs/l3-names.tsv` 式的内容索引（注册表内联名是 `import.meta.glob` 命名空间包装，真类是 `default` 指向的标识符）。
+
 ## v0.3.22 — 浏览器道：像素门与探针的判决第一次有了反例（离线 200 + 浏览器 16，变异三处五抓）；lenprefix 的"无可查"分成两种
 
 **问题 1**：v0.3.20 给十道离线门补了反例，但 skill 的头牌承诺"逐像素一致"落在 pixelcompare 的 0.00 上、CLEAN 落在 probe 上——

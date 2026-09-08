@@ -22,7 +22,8 @@
  *   node scripts/pixel-walk.mjs --a <rebuild-url> --b <mirror-url> [--steps 9]
  *                               [--pump 16.7,120] [--max-mean 1.0] [--self]
  *                               [--out docs/pixelcompare] [--format jpeg] [--quality 92] [--rescroll-ms 1500]
- *                               [--settle ms] [--ready expr] [--hold expr] [--hold-grace ms] [--hold-after N]
+ *                               [--settle ms] [--ready expr] [--after-ready N] [--hold expr] [--hold-grace ms] [--hold-after N]
+ *                              [--seed js] [--freeze-css] [--chunk N]
  *
  * 中文规格（自 scripts/README.md 迁入，v0.3.21；本表另一拼写：`pixel-walk.mjs`）
  * **检查点巡航**：在 N 个滚动位置各跑一次像素门。⛔ **滚两次**（`load` 时 + 虚拟时间 +1.5s 再一次）——页面在自己的 init 里重置滚动会**吃掉** load 时那一次，于是所有检查点都拍页顶而两侧一致地全绿。⛔ **重复帧要逐格报出来**：全局 distinct 计数在「9 格里 3 格重复」时照样通过。⛔ **单个 0.00 是这套工具能产出的最误导的数字**——它是一帧，通常是页面顶部的头两秒。⚠ 先用 `--self` 在同样的检查点上测带宽：实测未冻结时自比 4.6–5.0、跨侧 2.6–3.4，**差异整个落在噪声里**；冻结后两者都归零。⭐ **状态分两种**（v0.3.15，determinism §7.1）：泵到的（挂载相位）用 `--ready/--after-ready`，**等到的**（GLB 在 worker 里解码）用 `--hold <expr> --hold-after N --hold-grace ms`——先泵 N 帧让页面开口要，真实时间等到达，再两侧同样绝对泵完；用错半边一个是 1/3 概率拍到未到达，一个是恒定的相位差
@@ -34,12 +35,15 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { cli } from "./lib/cli.mjs";
 
-// ⚠ settle/ready/hold*/format/quality/out/pump are FORWARDED to pixelcompare
-// verbatim — a name it does not know must never be accepted here.
+// ⚠ settle/ready/after-ready/hold*/seed/freeze-css/chunk/format/quality/out/pump
+// are FORWARDED to pixelcompare verbatim — a name it does not know must never
+// be accepted here. ⛔ The whole protocol has to pass through: a walk that drops
+// the caller's --seed (media freeze) or --freeze-css re-measures the entropy
+// the caller had just removed, and the band jumps back (lamalama: 0.16 → 1.8).
 cli({
   known: ["a", "b", "steps", "pump", "out", "max-mean", "format", "quality", "rescroll-ms",
-    "settle", "ready", "hold", "hold-grace", "hold-after"],
-  bools: ["self"],
+    "settle", "ready", "hold", "hold-grace", "hold-after", "after-ready", "seed", "chunk"],
+  bools: ["self", "freeze-css"],
   file: import.meta.url,
 });
 
@@ -68,6 +72,13 @@ const READY = flag("ready", null);
 const HOLD = flag("hold", null);
 const HOLD_GRACE = flag("hold-grace", null);
 const HOLD_AFTER = flag("hold-after", null);
+// --after-ready / --chunk / --freeze-css: passed through unchanged.
+// --seed: the caller's load-time script (a media freeze, a state pin) runs
+// FIRST, then this walk's own scroll seed — one injected source, both sides.
+const AFTER_READY = flag("after-ready", null);
+const CHUNK = flag("chunk", null);
+const FREEZE_CSS = args.includes("--freeze-css");
+const USER_SEED = flag("seed", null);
 if (!A || !B) { console.error("usage: pixel-walk.mjs --a <rebuild-url> --b <mirror-url> [--steps N] [--pump dt,frames] [--max-mean N] [--self] [--ready expr] [--hold expr] [--hold-grace ms] [--hold-after N]"); process.exit(2); }
 if (STEPS < 2) { console.error("FATAL — --steps must be >= 2. One checkpoint is the problem this tool exists to fix."); process.exit(2); }
 
@@ -84,7 +95,14 @@ if (STEPS < 2) { console.error("FATAL — --steps must be >= 2. One checkpoint i
 // ⚠ The re-issue rides the pump, not the wall clock, so it still lands after
 // init on a frozen page.
 const seedFor = (f) =>
-  `window.addEventListener("load", () => {
+  `// ⛔ Same-URL captures RESTORE the previous capture's scroll position before
+   // load (Chrome's scroll restoration) — under --self the second side starts
+   // where the first one landed, its init fires different observers, and the
+   // band records a difference that is pure instrument (lamalama: a constant
+   // 3.7 at one checkpoint, 0.00 with this line). The walk drives the scroll
+   // itself, so restoration has nothing to offer here.
+   history.scrollRestoration = "manual";
+   window.addEventListener("load", () => {
      // ⛔ FIND THE SCROLLER. The document is not always what scrolls. A site
      // using a smooth-scroll library often scrolls an inner
      // \`overflow-y: auto\` container, and there
@@ -173,7 +191,7 @@ let fail = 0;
 for (let i = 0; i < STEPS; i++) {
   const f = i / (STEPS - 1);
   const name = `walk-${String(Math.round(f * 100)).padStart(3, "0")}`;
-  const a = ["--a", A, "--b", B, "--name", name, "--pump", PUMP, "--seed", seedFor(f), "--out", OUT, "--format", FMT, "--quality", Q];
+  const a = ["--a", A, "--b", B, "--name", name, "--pump", PUMP, "--seed", (USER_SEED ? USER_SEED + ";\n" : "") + seedFor(f), "--out", OUT, "--format", FMT, "--quality", Q];
   // ⭐ Drive INSIDE the pump loop, not from a load-time seed: on a site whose
   // scroll container appears only after its preloader, a seed fires too early
   // and every checkpoint lands at 0.
@@ -183,13 +201,19 @@ for (let i = 0; i < STEPS; i++) {
   if (HOLD) a.push("--hold", HOLD);
   if (HOLD_GRACE) a.push("--hold-grace", HOLD_GRACE);
   if (HOLD_AFTER) a.push("--hold-after", HOLD_AFTER);
+  if (AFTER_READY) a.push("--after-ready", AFTER_READY);
+  if (CHUNK) a.push("--chunk", CHUNK);
+  if (FREEZE_CSS) a.push("--freeze-css");
   if (SELF) a.push("--self");
   const { code, out } = await run(a);
   // ⭐ Forward the alignment diagnostics. pixelcompare says "ready after N pumped
   // frame(s)" / "--hold satisfied after N" per side, and swallowing them left a
   // walk whose READY never fired indistinguishable from one that aligned
   // (raycastkbd: a constant 1.7 band with no line saying why).
-  for (const line of out.split("\n")) if (/^\[pixel\]\s+(REBUILD|MIRROR|[AB]):.*(ready after|--hold satisfied|never satisfied)/.test(line)) console.log(`  ${line.trim()}`);
+  // The instrument line once per walk: every checkpoint runs the same seed/ready/drive
+  // (the seed and drive embed f, so only the ready hash is expected to be constant).
+  if (i === 0) for (const line of out.split("\n")) if (/^\[pixel\] instrument — /.test(line)) console.log(`  ${line.trim()}`);
+  for (const line of out.split("\n")) if (/^\[pixel\]\s+(REBUILD|MIRROR|[AB]):.*(ready after|--hold satisfied|never satisfied)/.test(line) || /window\.__why/.test(line)) console.log(`  ${line.trim()}`);
   // Landing positions, reported by the seed on each side.
   const m = out.match(/\{"meanAbsDiff":[^}]+\}/);
   const census = out.match(/REBUILD: (\d+) colours/);

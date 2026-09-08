@@ -1299,5 +1299,147 @@ const TMP = scratch(".tmp");
   truthy("fingerprint — …and the refusal-page Referer retry did not fire on the stub (v0.3.23)", !/疑似拒绝页/.test(rep));
 }
 
+// ------------------------------- v0.3.23 (lamalama): gapfill-video keeps the ledger whole
+// It wrote manifest rows with no sha256 and never touched inventory.tsv — the one
+// ledger writer that bypassed lib/ledger.mjs. A mirror it backfilled (4,741 rows)
+// would have failed verify-mirror's ledger gate on every segment.
+{
+  const http = await import("node:http");
+  const { execFile } = await import("node:child_process");
+  const routes = {
+    "/v/playlist.m3u8": ["application/vnd.apple.mpegurl", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=640x360\n360p/video.m3u8\n"],
+    "/v/360p/video.m3u8": ["application/vnd.apple.mpegurl", "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nvideo0.ts\n#EXTINF:4.0,\nvideo1.ts\n#EXT-X-ENDLIST\n"],
+    "/v/360p/video0.ts": ["video/mp2t", "SEG0" + "a".repeat(100)], "/v/360p/video1.ts": ["video/mp2t", "SEG1" + "b".repeat(100)],
+  };
+  const srv = http.createServer((req, res) => { const x = routes[req.url]; if (!x) { res.writeHead(404); return res.end("nf"); } res.writeHead(200, { "content-type": x[0] }); res.end(x[1]); });
+  await new Promise((ok) => srv.listen(0, "127.0.0.1", ok));
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  const GF = path.join(TMP, "gf");
+  const gap = () => new Promise((resolve) => execFile(process.execPath, [path.join(SKILL, "scripts/gapfill-video.mjs"), "--master", `${origin}/v/playlist.m3u8`, "--out", GF, "--origin", origin, "--delay", "0", "--workers", "2"], { cwd: TMP }, (err, so, se) => resolve({ code: err ? err.code : 0, out: String(so) + String(se) })));
+  try {
+    const g1 = await gap();
+    if (!existsSync(path.join(GF, "mirror-manifest.json"))) throw new Error(`gapfill wrote no manifest: exit ${g1.code} :: ${g1.out.slice(-400).replace(/\n/g, " | ")}`);
+    const files = () => JSON.parse(readFileSync(path.join(GF, "mirror-manifest.json"), "utf8")).files;
+    const rows = Object.values(files());
+    truthy("gapfill-video — an absolute --out is used as given; every ladder file lands with bytes AND sha256 (v0.3.23)", g1.code === 0 && rows.length === 4 && rows.every((r) => r.path && /^[0-9a-f]{64}$/.test(r.sha256 || "")), `exit ${g1.code} rows=${JSON.stringify(rows).slice(0, 200)} ${g1.out.slice(-200)}`);
+    const inv = existsSync(path.join(GF, "inventory.tsv")) ? readFileSync(path.join(GF, "inventory.tsv"), "utf8").trim().split("\n") : [];
+    truthy("gapfill-video — inventory.tsv is regenerated through lib/ledger (header + 4 rows) (v0.3.23)", inv.length === 5 && /^SHA256\t/.test(inv[0]), `lines=${inv.length}`);
+    // rows written by the old script (no sha256) are repaired from disk, not re-downloaded
+    const m = JSON.parse(readFileSync(path.join(GF, "mirror-manifest.json"), "utf8"));
+    for (const u of Object.keys(m.files)) if (u.endsWith(".ts") || u.endsWith("/360p/video.m3u8")) delete m.files[u].sha256;
+    writeFileSync(path.join(GF, "mirror-manifest.json"), JSON.stringify(m, null, 2)); rmSync(path.join(GF, "inventory.tsv"));
+    const g2 = await gap();
+    truthy("gapfill-video — segment AND playlist rows lacking sha256 are repaired from the bytes on disk, 0 downloads (v0.3.23)",
+      g2.code === 0 && /0 segment\(s\) downloaded/.test(g2.out) && /3 row\(s\) repaired/.test(g2.out) && Object.values(files()).every((r) => r.sha256) && existsSync(path.join(GF, "inventory.tsv")), g2.out.slice(-240));
+  } catch (e) { bad("gapfill-video loopback", String(e.message).split("\n")[0]); }
+  finally { srv.close(); }
+}
+
+// ------------------------------- v0.3.23 (lamalama): verify-mirror's resample replays the ledger row's Accept profile
+// The origin serves WebP under a .jpg URL to a browser image Accept and JPEG to */*,
+// declaring only Vary: Accept-Encoding. The crawler recorded profile "std"; the resample
+// asked with */* and reported the mirror as drifted from an origin that had not changed.
+{
+  const http = await import("node:http");
+  const { writeLedgers } = await import(path.join(SKILL, "scripts/lib/ledger.mjs"));
+  const { sha256: sha } = await import(path.join(SKILL, "scripts/lib/hash.mjs"));
+  const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.from([0x10, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(8, 1)]);
+  const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40, 2)]);
+  const srv = http.createServer((req, res) => {
+    if (req.url !== "/t.jpg") { res.writeHead(404); return res.end("nf"); }
+    const webp = /image\/webp/.test(req.headers.accept || "");
+    res.writeHead(200, { "content-type": webp ? "image/webp" : "image/jpeg", vary: "Accept-Encoding" }); res.end(webp ? WEBP : JPEG);
+  });
+  await new Promise((ok) => srv.listen(0, "127.0.0.1", ok));
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  const D = W(path.join(TMP, "neg-mirror"), { "t.jpg": WEBP });
+  const row = (profile) => ({ [`${origin}/t.jpg`]: { path: "t.jpg", bytes: WEBP.length, sha256: sha(WEBP), type: "image/webp", profile, vary: "Accept-Encoding" } });
+  // async execFile, NOT run(): the origin lives in THIS process, and spawnSync would
+  // block the event loop the child's fetch is waiting on (a deadlock, not a slow test).
+  const { execFile } = await import("node:child_process");
+  const vm = async (profile) => { await writeLedgers(D, { origin, files: row(profile), redirects: [] }); return new Promise((resolve) => execFile(process.execPath, [path.join(SKILL, "scripts/verify-mirror.mjs"), "--mirror", D, "--origin", origin, "--resample", "1", "--resample-delay", "0", "--skip", "mapping,authenticity,closure"], { encoding: "utf8", timeout: 30000 }, (err, so, se) => resolve({ code: err ? (err.code ?? 1) : 0, out: String(so) + String(se) }))); };
+  try {
+    await new Promise((r) => setTimeout(r, 50));
+    green("verify-mirror — resample replays profile \"std\": the WebP the browser got still matches (v0.3.23)", await vm("std"), /1\/1 sampled URLs still byte-identical/);
+    red("verify-mirror — …and a row fetched under \"bare\" is re-fetched bare: JPEG ≠ WebP reds (v0.3.23)", await vm("bare"), /no longer match the ledger/);
+  } finally { srv.close(); }
+  // sweep-routes: --out pointing at a directory is refused before any browser starts
+  const SD = W(path.join(TMP, "sweep-dir"));
+  red("sweep-routes — --out that is a directory is FATAL 2 up front, not EISDIR after the sweep (v0.3.23)", run("scripts/sweep-routes.mjs", ["--base", "http://127.0.0.1:1", "--routes", "/", "--out", SD]), /is a directory; give the report FILE path/, 2);
+}
+
+// ------------------------------- v0.3.23 (lamalama): T-DATA-KEEP carves out every data island, not only __NUXT_DATA__
+// A JSON-LD block's url/@id are statements about the page, not addresses; the
+// built-in carve-out only knew Nuxt's spelling, so T-LOCALIZE walked into
+// 2–3 islands per page and rewrote them to "/".
+{
+  const { transformPage } = await import(path.join(SKILL, "scripts/lib/shell-build.mjs"));
+  const cfg = { originHosts: ["x.com"], stubExtHosts: [], mirroredExtHosts: [], transforms: [] };
+  const ld = `<script type="application/ld+json">{"@id":"https:\\/\\/x.com\\/","url":"https://x.com/"}</script>`;
+  const sr = `<script type="speculationrules">{"prefetch":[{"where":{"href_matches":"https://x.com/*"}}]}</script>`;
+  const page = `<html><head>${ld}${sr}</head><body><a href="https://x.com/about">a</a></body></html>`;
+  const r1 = transformPage(page, cfg, { head: false });
+  truthy("shell-build — JSON-LD and speculationrules islands are kept byte-for-byte (v0.3.23)", r1.text.includes(ld) && r1.text.includes(sr), r1.text.slice(0, 200));
+  truthy("shell-build — …while the anchor outside the islands is still localized (v0.3.23)", r1.text.includes('href="/about"'), r1.text.slice(-120));
+  eq("shell-build — the carve-out fires once per island and is ledgered as T-DATA-KEEP (v0.3.23)", r1.hits.get("T-DATA-KEEP"), 2);
+  const r2 = transformPage(`<script type="application/json" id="cfg">{"api":"https://x.com/api"}</script>`, { ...cfg, keepIslands: [/(<script[^>]*id="cfg"[^>]*>)([\s\S]*?)(<\/script>)/g] }, { head: false });
+  truthy("shell-build — cfg.keepIslands adds a site-specific island to the carve-out (v0.3.23)", r2.text.includes('"api":"https://x.com/api"') && r2.hits.get("T-DATA-KEEP") === 1, r2.text);
+}
+
+// ------------------------------- v0.3.23 (lamalama): the two localisation implementations must agree on every shape
+// `"site_url":"https:\/\/lamalama.com"` — the build layer wrote "" and serve.mjs left it
+// untouched. Same disease as chungiyoo (unescaped bare form), one spelling over.
+{
+  const { localizeShapes } = await import(path.join(SKILL, "scripts/lib/shell-build.mjs"));
+  const fx = `a="https://x.com/p";b="https://x.com";c="https:\\/\\/x.com\\/p";d="https:\\/\\/x.com";e="//x.com/q";`;
+  const built = localizeShapes(fx, "x.com", "");
+  eq("shell-build — escaped bare host localises to \\/ like the plain bare host localises to / (v0.3.23)",
+    built, `a="/p";b="/";c="\\/p";d="\\/";e="/q";`);
+  const { spawn } = await import("node:child_process");
+  // an .html fixture: the build layer only ever transforms documents, and serve.mjs
+  // deliberately leaves unescaped //host/ alone inside JS (concatenation with "https:")
+  const R = W(path.join(TMP, "parity"), { "cfg.html": fx });
+  const sv = spawn(process.execPath, [path.join(SKILL, "scripts/serve.mjs"), "--root", R, "--port", "29978", "--origin-host", "x.com"], { stdio: "pipe" });
+  let up = false; for (let i = 0; i < 40 && !up; i++) { try { await fetch("http://127.0.0.1:29978/__wrs/identity"); up = true; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+  try {
+    const served = await (await fetch("http://127.0.0.1:29978/cfg.html")).text();
+    eq("serve — the response-layer rewrite agrees with lib/shell-build on all five origin shapes (v0.3.23)", served, built);
+  } finally { sv.kill("SIGTERM"); await new Promise((r) => sv.once("exit", r)); }
+  // beautify-bundle's README ledger is cumulative across runs
+  const B = W(path.join(TMP, "bl"), { "a-AAAAAAAA.js": "export const a=1;", "b-BBBBBBBB.js": "export const b=2;" });
+  run("scripts/beautify-bundle.mjs", [path.join(B, "a-AAAAAAAA.js"), "--out", path.join(B, "pretty")]);
+  run("scripts/beautify-bundle.mjs", [path.join(B, "b-BBBBBBBB.js"), "--out", path.join(B, "pretty")]);
+  const led = readFileSync(path.join(B, "pretty/README.md"), "utf8");
+  truthy("beautify-bundle — the ledger keeps rows from earlier runs (a batch over the rest must not drop the app row) (v0.3.23)", /\| a-AAAAAAAA\.js \|/.test(led) && /\| b-BBBBBBBB\.js \|/.test(led), led.split("\n").filter((l) => l.startsWith("| ")).join(" || ").slice(0, 300));
+}
+
 // ---------------------------------------------------------------- summary
+// serve --stub-json: an origin endpoint answered by its JSON contract, any method (v0.3.23)
+{
+  const D = W(path.join(TMP, "stubjson"), { "site/index.html": "<p>x</p>", "site/favicon.ico": "", "stub.json": JSON.stringify({ success: true, data: { message: "stubbed" } }) });
+  const S = await serveOn(29992, path.join(D, "site"), ["--stub-json", "/wp-admin/admin-ajax.php::" + path.join(D, "stub.json")]);
+  try {
+    const post = await fetch(`${S.base}/wp-admin/admin-ajax.php?action=llHandleContactFormSubmit`, { method: "POST", body: "a=1" });
+    truthy("serve — --stub-json answers a POST to the registered path with the file, 200 application/json (v0.3.23)", post.status === 200 && /application\/json/.test(post.headers.get("content-type") || ""), `${post.status} ${post.headers.get("content-type")}`);
+    eq("serve — …and the body is the file's JSON contract verbatim (v0.3.23)", (await post.json()).data?.message, "stubbed");
+    eq("serve — …a GET to the same path is answered too: the stub is by path, not by method (v0.3.23)", (await fetch(`${S.base}/wp-admin/admin-ajax.php`)).status, 200);
+    eq("serve — …while a neighbouring path still falls through (v0.3.23)", (await fetch(`${S.base}/wp-admin/other.php`)).status, 404);
+  } finally { await S.stop(); }
+  red("serve — --stub-json without PATH::FILE is FATAL 2 (v0.3.23)", run("scripts/serve.mjs", ["--root", path.join(D, "site"), "--port", "29991", "--stub-json", "/x"]), /needs PATH::FILE/, 2);
+  red("serve — --stub-json pointing at a missing file is FATAL 2 before the server listens (v0.3.23)", run("scripts/serve.mjs", ["--root", path.join(D, "site"), "--port", "29991", "--stub-json", "/x::" + path.join(D, "nope.json")]), /not a readable JSON file/, 2);
+}
+
+// pixel-walk's scroll seed must switch scroll restoration off: same-URL captures
+// otherwise start where the previous capture landed (v0.3.23, lamalama --self 3.7 → 0.00).
+truthy("pixel-walk — the scroll seed sets history.scrollRestoration = \"manual\" before its load handler (v0.3.23)",
+  /history\.scrollRestoration = "manual";[\s\S]{0,200}addEventListener\("load"/.test(readFileSync(path.join(SKILL, "scripts/pixel-walk.mjs"), "utf8")), "seed text");
+
+// pixel-walk forwards the whole pixelcompare protocol (v0.3.23): a walk that drops
+// --seed / --freeze-css re-measures the entropy the caller had just removed.
+{
+  const h = run("scripts/pixel-walk.mjs", ["--help"]);
+  for (const f of ["seed", "freeze-css", "after-ready", "chunk"]) truthy(`pixel-walk — --help lists --${f} as a forwarded flag (v0.3.23)`, h.code === 0 && new RegExp(`--${f}\\b`).test(h.out), h.out.slice(-300));
+  red("pixel-walk — a flag pixelcompare does not know is still FATAL 2 here (v0.3.23)", run("scripts/pixel-walk.mjs", ["--a", "http://127.0.0.1:1/", "--b", "http://127.0.0.1:2/", "--bogus", "1"]), /unknown|FATAL/i, 2);
+}
+
 finish(TMP);

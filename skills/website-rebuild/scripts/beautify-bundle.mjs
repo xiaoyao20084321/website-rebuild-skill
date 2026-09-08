@@ -23,6 +23,7 @@
 // `node beautify-bundle.mjs mirror/assets/cdn.x.com/bundle.js`
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { tokenStream, firstDivergence, showToken } from "./lib/tokens.mjs";
@@ -173,6 +174,12 @@ for (const file of FILES) {
 
 // The regeneration ledger. Anyone touching _pretty/ must be able to reproduce
 // it byte-for-byte from this file alone.
+// The ledger is CUMULATIVE: rows for files not in this run are carried over
+// (a batch run over the other 62 chunks used to drop the app chunk's row, and
+// with it the only record that its tokens DIFFER) [lamalama].
+const prior = existsSync(path.join(OUT, "README.md")) ? readFileSync(path.join(OUT, "README.md"), "utf8") : "";
+const mine = new Set(entries.map((e) => e.pretty));
+const carried = prior.split("\n").filter((l) => /^\| \S+ \| \S+ \| `[0-9a-f…]+` \| /.test(l) && !mine.has(l.split(" | ")[0].slice(2)));
 const readme = `# _pretty/ — beautified bundle coordinate system
 
 Beautified with **js-beautify@${JS_BEAUTIFY_VERSION}** (PINNED — a version bump shifts
@@ -188,7 +195,7 @@ ${entries
     (e) =>
       `| ${e.pretty} | ${e.source} | \`${e.sha256.slice(0, 16)}…\` | ${e.tokens} | \`npx -y js-beautify@${JS_BEAUTIFY_VERSION} --type ${e.type} -f ${e.source} -o mirror/_pretty/${e.pretty}\` |`,
   )
-  .join("\n")}
+  .join("\n")}${carried.length ? "\n" + carried.join("\n") : ""}
 
 Token column: \`equal\` = safe to deliver these bytes (re-emit / slice); \`DIFFER@n\` = js-beautify
 changed content (nested template literal) — COORDINATES ONLY, deliver from the minified original.
