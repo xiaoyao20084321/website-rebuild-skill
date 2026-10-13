@@ -279,7 +279,7 @@ README.en.md               # 英文版 README
 
 版本随真实复刻项目递进：每个版本发布的功能与修复，都先在至少一个完整项目上验证过。
 
-完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.23**：lamalama 战役回哺——像素门第一次要**等媒体到达**：`--ready` 可以把没就绪的原因留在 `window.__why`（pixelcompare 在 never satisfied 时打印），每次跑打 seed/ready/drive 指纹（一份陈旧的重复 seed 吃掉半天），`--drive` 的落点合同写进报错，pixel-walk 转发整套协议；determinism 新增 `autoplay` 属性绕过 `play()` 补丁、HLS 首片 PTS 落洞、谎报 `paused` 反噬 hls.js 三条；serve `--stub-json` 端点桩；加上 M0/M2 的十一条实撞修复。离线 235 + 浏览器 21。
+完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.24**:第二个社区 PR——**Windows 原生跑通离线道**(lianghua 贡献,Windows 11 / Node 24 实测,修前 ok 2 → 修后 ok 214;POSIX 零行为变化)。两类跨平台缺陷收拢成两个唯一拼写:ESM 绝对路径 import 走 `importAbs`(`pathToFileURL` 是三平台唯一正确写法),钉死版本 npx 调用走 `lib/npx.mjs` 的 `spawnNpx`(Windows 上 npx 是 .cmd 垫片,必须经 cmd.exe)。Windows 原生自此进入支持面,余下失败项欢迎继续按条 PR。
 
 ## 贡献
 
@@ -297,6 +297,7 @@ README.en.md               # 英文版 README
 
 ## 友情链接
 
+- [Termark](https://www.termark.app/?affiliateCode=7ZVEGY3IZA) —— 简洁好用的全平台 SSH / SFTP 客户端。我自己的主力 SSH 工具,用下来已经完全替代了 Termius 和 iShell pro:该有的都有,不该有的都没有,我要用的全都有!内置的 tmux 会话管理和 Docker 容器管理是我日常用得最多的两个功能,顺手到不想回去。
 - [linux.do](https://linux.do/u/80yan9/)
 - [v2ex](https://www.v2ex.com/member/Boyang)
 - [NodeSeek](https://www.nodeseek.com/space/69434#/)

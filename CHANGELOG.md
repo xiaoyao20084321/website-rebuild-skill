@@ -1,5 +1,27 @@
 # 更新记录
 
+## v0.3.24 — 第二个社区 PR：Windows 原生跑通离线道(lianghua 贡献)
+
+Windows 原生(非 WSL)此前 `npm test` 在第 3 组断言即崩,后面 200+ 条一条
+看不到。[PR #2](https://github.com/boyang-hu/website-rebuild-skill/pull/2)
+(lianghua,Windows 11 / Node 24 实测,修前 ok 2 → 修后 ok 214)修两类
+跨平台缺陷,POSIX 零行为变化:
+
+- **ESM 裸绝对路径 import**:Windows 上 `D:\…` 被当 URL scheme 解析
+  (ERR_UNSUPPORTED_ESM_URL_SCHEME)。harness 收拢
+  `importAbs = (p) => import(pathToFileURL(p).href)`,run/browser 两道共用
+  ——`pathToFileURL` 是三平台唯一正确拼写。
+- **`spawnSync("npx")` 起不来**(Windows 上 npx 是 .cmd 垫片:直接 spawn
+  ENOENT,按 .cmd 名 spawn EINVAL)。收拢成 `scripts/lib/npx.mjs` 的
+  `spawnNpx`:POSIX 直通,Windows 经 `cmd.exe /d /s /c` 保留真实 argv、
+  不触发 DEP0190;六个 acorn/js-beautify 调用方统一换用,仍零依赖。
+
+定位明确:**Windows 原生进入支持面**。余下 ~19 条 Windows 失败
+(0xC0000409 / verify-fresh exit 5 / CRLF frontmatter 等)欢迎继续按条 PR,
+约定不变:每条带 Windows 实测出处,POSIX 行为不变或配套 selftest。
+
+(注:v0.3.23 当时只落了仓库未发包;本版 tag 将两版一并发布。)
+
 ## v0.3.23 — lamalama 战役回哺：像素门学会等媒体到达并说出为什么；十七条实撞修复（离线 235 + 浏览器 21）
 
 一个 WordPress 外壳 + Vite scope-hoisted bundle + Bunny HLS（111 个 master、2.4 GB）的 agency 站，从 Step 0 走到 M(n)/M(n+1)，
