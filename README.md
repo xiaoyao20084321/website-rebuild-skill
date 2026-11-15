@@ -91,6 +91,8 @@ npx website-rebuild-skill --dir <skills 目录>  # 其他 runtime，目录名 we
 
 安装器**只拷文件**——不跑 skill、不开浏览器、不联网，本身零依赖。拷完按 sha256 逐文件双向校验，全部匹配才算成功；目标已存在会打印在装的版本并拒绝，要 `--force` 才替换。`--dry-run` 可以先看它打算写什么。
 
+除 skill 目录本身，它还会把仓库根的 `README.md`、`README.en.md`、`LICENSE` 一并放进目标目录：SKILL.md 的「已验证过的网站」清单（正文里每个【代号】都靠它反查）就在 README 里，不带上的话装完就是一条死引用。
+
 **方式二：手动拷贝（已经克隆了仓库）**
 
 把 `skills/website-rebuild/` 整个目录放进你的 agent 的 skills 目录。以 Claude Code 为例：
@@ -98,9 +100,11 @@ npx website-rebuild-skill --dir <skills 目录>  # 其他 runtime，目录名 we
 ```bash
 # 用户级（或项目级 .claude/skills/）
 cp -R skills/website-rebuild ~/.claude/skills/website-rebuild
+# 再补上 SKILL.md 引用的站点清单（README 的「已验证过的网站」）
+cp README.md README.en.md LICENSE ~/.claude/skills/website-rebuild/
 ```
 
-其他支持 Agent Skills 规范的 runtime，按其各自的目录约定放置同一份目录即可。
+其他支持 Agent Skills 规范的 runtime，按其各自的目录约定放置同一份目录即可——同样记得带上那三份文档。
 
 ### 使用
 
@@ -128,7 +132,7 @@ cp -R skills/website-rebuild ~/.claude/skills/website-rebuild
 
 ⭐ **最后一步是"源码化"，而它必须排在最后。** 重构最怕改完不知道有没有坏；这里在动手之前已经有了一个逐像素精确的裁判，所以每一次拆分、每一次改名都能被证死。**没有裁判的重构是盲改。**
 
-⭐ **skill 的终点也在这里：到"人能读懂的真实"为止。** 拿产出去做你自己的项目（脚手架、fork、二次创作）是**你的工程，不是它的阶段**——它不替你起名字、写故事、换内容，因为那些决定只有你自己能做。但它留了一样别处没有的东西：交付物自带的字节清单与重拼门，让你 fork 之后**精确地知道自己每一步偏离了源站什么**。交接指南见 [`beyond-the-rebuild.md`](skills/website-rebuild/references/beyond-the-rebuild.md)。
+⭐ **skill 的终点也在这里：到"人能读懂的真实"为止。** 拿产出去做你自己的项目（脚手架、fork、二次创作）是**你的工程，不是它的阶段**——它不替你起名字、写故事、换内容，因为那些决定只有你自己能做。但它留了一样别处没有的东西：交付物自带的字节清单与重拼门，让你 fork 之后**精确地知道自己每一步偏离了源站什么**。交接指南见 [`beyond-the-rebuild.md`](https://github.com/boyang-hu/website-rebuild-skill/blob/main/skills/website-rebuild/references/beyond-the-rebuild.md)。
 
 ### 全程遵守的六条纪律
 
@@ -279,7 +283,7 @@ README.en.md               # 英文版 README
 
 版本随真实复刻项目递进：每个版本发布的功能与修复，都先在至少一个完整项目上验证过。
 
-完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.24**:第二个社区 PR——**Windows 原生跑通离线道**(lianghua 贡献,Windows 11 / Node 24 实测,修前 ok 2 → 修后 ok 214;POSIX 零行为变化)。两类跨平台缺陷收拢成两个唯一拼写:ESM 绝对路径 import 走 `importAbs`(`pathToFileURL` 是三平台唯一正确写法),钉死版本 npx 调用走 `lib/npx.mjs` 的 `spawnNpx`(Windows 上 npx 是 .cmd 垫片,必须经 cmd.exe)。Windows 原生自此进入支持面,余下失败项欢迎继续按条 PR。
+完整记录见 **[CHANGELOG.md](CHANGELOG.md)**。最新版本 **v0.3.25**：社区 PR #3（zhuchongba-01 贡献）修复安装后缺少站点清单与许可证的问题。安装器会携带 `README.md`、`README.en.md`、`LICENSE`，全部安装文件统一做 SHA-256 校验；手动安装说明同步补齐。新增安装器回归用例，离线测试 **253 passed / 0 failed**，真实 npm 包安装 **134/134** 文件哈希一致。
 
 ## 贡献
 

@@ -91,6 +91,8 @@ npx website-rebuild-skill --dir <skills dir>   # other runtimes; `website-rebuil
 
 The installer **only copies files** — it never runs the skill, never opens a browser, never fetches anything, and has no dependencies of its own. Every copied file is verified against the source by sha256 before it reports success; an existing install is reported by version and left alone unless you pass `--force`. Use `--dry-run` to see what it would write.
 
+On top of the skill directory itself, it also drops the repo-level `README.md`, `README.en.md` and `LICENSE` into the target: SKILL.md's "verified sites" table — the key every 【codename】 in SKILL.md resolves against — lives in the README, so an install without it ships a dead reference.
+
 **Option 2 — copy by hand (you already cloned the repo)**
 
 Put the entire `skills/website-rebuild/` directory into your agent's skills directory. For Claude Code:
@@ -98,9 +100,11 @@ Put the entire `skills/website-rebuild/` directory into your agent's skills dire
 ```bash
 # user level (or project level .claude/skills/)
 cp -R skills/website-rebuild ~/.claude/skills/website-rebuild
+# then bring the site list SKILL.md points at (the README's "verified sites")
+cp README.md README.en.md LICENSE ~/.claude/skills/website-rebuild/
 ```
 
-For other runtimes that support the Agent Skills standard, place the same directory according to their conventions.
+For other runtimes that support the Agent Skills standard, place the same directory according to their conventions — and bring those three docs along the same way.
 
 ### Use
 
@@ -128,7 +132,7 @@ You give it a URL; the agent walks the chain on its own:
 
 ⭐ **The last step is sourcification, and it must come last.** The scariest part of refactoring is not knowing whether you broke something; here a pixel-exact referee exists *before* the work starts, so every split and every rename can be proven safe. **Refactoring without a referee is blind editing.**
 
-⭐ **This is also where the skill ends: at "truth a human can read."** Taking the output further — scaffolding, forking, derivative work — is **your project, not its stage**: it won't pick names, write stories, or swap content for you, because only you can make those calls. But it leaves you something nowhere else provides: the deliverable's own byte manifest and reassembly gate, so after you fork you know **precisely how each step diverges from the source site**. See the handover guide: [`beyond-the-rebuild.md`](skills/website-rebuild/references/beyond-the-rebuild.md).
+⭐ **This is also where the skill ends: at "truth a human can read."** Taking the output further — scaffolding, forking, derivative work — is **your project, not its stage**: it won't pick names, write stories, or swap content for you, because only you can make those calls. But it leaves you something nowhere else provides: the deliverable's own byte manifest and reassembly gate, so after you fork you know **precisely how each step diverges from the source site**. See the handover guide: [`beyond-the-rebuild.md`](https://github.com/boyang-hu/website-rebuild-skill/blob/main/skills/website-rebuild/references/beyond-the-rebuild.md).
 
 ### The six disciplines
 
@@ -279,7 +283,7 @@ Before anything goes public, per-asset copyright **forensics** must be completed
 
 Versions advance with real rebuild projects: every feature and fix shipped was first validated on at least one complete project.
 
-Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.24** — the second community PR: **the offline lane now runs on native Windows** (contributed by lianghua, measured on Windows 11 / Node 24: ok 2 before → 214 after; zero behavior change on POSIX). Two classes of cross-platform defect, each collapsed into one canonical spelling: ESM absolute-path imports go through `importAbs` (`pathToFileURL` is the one spelling correct on all three platforms), and pinned-version npx calls go through `spawnNpx` in `lib/npx.mjs` (on Windows npx is a .cmd shim and must run via cmd.exe). Native Windows is now in the support surface; further fixes welcome, one PR per failure.
+Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.25** — community PR #3 (contributed by zhuchongba-01) fixes missing site documentation and licensing in installed skills. The installer now includes `README.md`, `README.en.md`, and `LICENSE`, with SHA-256 verification covering every installed file; manual installation instructions are updated too. Installer regression coverage added: **253 passed / 0 failed** offline tests, and **134/134** file hashes match after installation from a real npm tarball.
 
 ## Contributing
 
