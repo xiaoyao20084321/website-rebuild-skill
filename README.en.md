@@ -283,7 +283,7 @@ Before anything goes public, per-asset copyright **forensics** must be completed
 
 Versions advance with real rebuild projects: every feature and fix shipped was first validated on at least one complete project.
 
-Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.25** — community PR #3 (contributed by zhuchongba-01) fixes missing site documentation and licensing in installed skills. The installer now includes `README.md`, `README.en.md`, and `LICENSE`, with SHA-256 verification covering every installed file; manual installation instructions are updated too. Installer regression coverage added: **253 passed / 0 failed** offline tests, and **134/134** file hashes match after installation from a real npm tarball.
+Full history in **[CHANGELOG.md](CHANGELOG.md)**. Latest: **v0.3.26** — community PR #4 (contributed by ZT1314888 / Lucky) fixes missed same-directory assets: `src="config.js"`, `href="style.css"`, and `poster="cover.jpg"` now resolve against the document URL in both the crawler and closure gate. Non-URL filtering for `data-*` attributes and the JS relative-path guard remain in place. Rechecking the live MeshAtlas site increased extracted references from **2 to 12**; offline tests: **256 passed / 0 failed**.
 
 ## Contributing
 
@@ -301,6 +301,7 @@ Released under the [MIT License](LICENSE).
 
 ## Links
 
+- [PPFlight](https://www.ppflight.com/?aff=88888) — a Los Angeles VPS provider with routes optimized for mainland China. Its LIFT series offers CN2 GIA for China Telecom, 9929 for China Unicom, and CMIN2 for China Mobile in both directions. I’ve been very happy with the network quality, including during evening peak hours. Worth a look if you value a stable direct connection between mainland China and the US West Coast.
 - [Termark](https://www.termark.app/?affiliateCode=7ZVEGY3IZA) — a clean, no-fuss SSH / SFTP client for every platform. My daily driver — it fully replaced Termius and iShell pro for me: everything you need, nothing you don't, and everything *I* need is there. The built-in tmux session manager and Docker container manager are what I reach for every day — smooth enough that I'm not going back.
 - [linux.do](https://linux.do/u/80yan9/)
 - [v2ex](https://www.v2ex.com/member/Boyang)
